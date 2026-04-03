@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:travel_app/features/main_screen.dart';
 import '../../core/constants/app_colors.dart';
-import '../main_screen.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 class SignUpScreen extends StatefulWidget {
   const SignUpScreen({super.key});
@@ -29,7 +30,7 @@ class SignUpScreenState extends State<SignUpScreen> {
     super.dispose();
   }
 
-  void handleSignUp() {
+  Future<void> handleSignUp() async{
     if (formKey.currentState!.validate()) {
       if (!agreeToTerms) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -39,11 +40,46 @@ class SignUpScreenState extends State<SignUpScreen> {
         );
         return;
       }
-      Navigator.pushAndRemoveUntil(
-        context,
-        MaterialPageRoute(builder: (_) => const MainScreen()),
-        (route) => false,
-      );
+      loading(context);
+
+      //Dang ky voi Firebase
+      try{
+        UserCredential userCredential = await FirebaseAuth.instance.createUserWithEmailAndPassword(email: emailController.text.trim(), password: passwordController.text.trim());
+
+        // Tùy chọn cập nhật display name vào profile
+        await userCredential.user?.updateDisplayName(nameController.text.trim());
+
+        // Tắt Loading
+        if(!mounted) return;
+        Navigator.pop(context);
+
+        Navigator.of(context).push(
+          MaterialPageRoute(builder: (context) => MainScreen(),)
+        );
+
+      } on FirebaseAuthException catch(e){
+        //Tắt loading khi bị lỗi
+        if (!mounted) return;
+        Navigator.of(context).pop();
+
+        String message ;
+        if (e.code == 'weak-password') {
+          message = "Mật khẩu quá yếu.";
+        } else if (e.code == 'email-already-in-use') {
+          message = "Email này đã được đăng ký tài khoản khác.";
+        } else if (e.code == 'invalid-email') {
+          message = "Định dạng email không hợp lệ.";
+        }else{
+          message = "Đã xảy ra lỗi";
+        }
+
+        ScaffoldMessenger.of(context).showSnackBar(thongBao('Lỗi', message));
+      }
+      catch(e){
+        if(!mounted) return;
+        Navigator.of(context).pop();
+        print(e);
+      }
     }
   }
 
@@ -119,54 +155,6 @@ class SignUpScreenState extends State<SignUpScreen> {
                           }
                           return null;
                         },
-                      ),
-                      const SizedBox(height: 14),
-                      label('Mã xác nhận'),
-                      const SizedBox(height: 6),
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Expanded(
-                            child: TextFormField(
-                              controller: otpController,
-                              keyboardType: TextInputType.number,
-                              decoration: inputDeco(
-                                hint: 'Nhập mã OTP',
-                                icon: Icons.verified_outlined,
-                              ),
-                              validator: (v) {
-                                if (v == null || v.trim().isEmpty) {
-                                  return 'Vui lòng nhập mã OTP';
-                                }
-                                return null;
-                              },
-                            ),
-                          ),
-                          const SizedBox(width: 10),
-                          SizedBox(
-                            height: 52,
-                            child: ElevatedButton(
-                              onPressed: sendOtp,
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: otpSent
-                                    ? AppColors.textSecondary
-                                    : AppColors.primary,
-                                foregroundColor: Colors.white,
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                                padding: const EdgeInsets.symmetric(horizontal: 18),
-                              ),
-                              child: Text(
-                                otpSent ? 'Gửi lại' : 'Gửi mã',
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: 14,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
                       ),
                       const SizedBox(height: 14),
                       label('Mật khẩu'),
@@ -276,6 +264,9 @@ class SignUpScreenState extends State<SignUpScreen> {
                           ),
                           GestureDetector(
                             onTap: () => Navigator.pop(context),
+                            // onTap: () => Navigator.of(context).push(
+                            //   MaterialPageRoute(builder: (context) => const LoginScreen())
+                            // ),
                             child: const Text(
                               'Đăng nhập',
                               style: TextStyle(
@@ -334,7 +325,7 @@ class SignUpScreenState extends State<SignUpScreen> {
                         color: Colors.white, size: 16),
                     SizedBox(width: 6),
                     Text(
-                      'Vietnam Travel Member',
+                      'VietNam Travel Member',
                       style: TextStyle(
                           color: Colors.white,
                           fontSize: 13,
@@ -434,5 +425,61 @@ class SignUpScreenState extends State<SignUpScreen> {
     );
   }
 }
+
+ SnackBar thongBao(String tieuDe, String noiDung){
+    return SnackBar(
+      content: Expanded(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              tieuDe,
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 16,
+                color: Colors.white,
+              ),
+            ),
+            Text(
+              noiDung,
+              style: TextStyle(
+                fontSize: 13,
+                color: Colors.white.withValues(alpha: 0.9),
+              ),
+            ),
+          ],
+        ),
+      ),
+      backgroundColor: tieuDe.compareTo('Thành công') == 0 ? Colors.green.shade600 : Colors.red.shade600,
+      behavior: SnackBarBehavior.floating, // Làm SnackBar nổi lên
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(15), // Bo góc xịn xò
+      ),
+      margin: const EdgeInsets.all(20), // Cách các cạnh màn hình
+      duration: const Duration(seconds: 3),
+      elevation: 6, // Tạo bóng đổ
+    );
+  }
+
+  Future<dynamic> loading(BuildContext context){
+    return showDialog(
+      context: context,
+      barrierDismissible: false, // Ngăn người dùng nhấn ra ngoài để tắt
+      builder: (context) => Center(
+        child: Container(
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(15),
+          ),
+          child: const CircularProgressIndicator(
+            color: Colors.blue, // Hoặc AppColors.primary của bạn
+          ),
+        ),
+      ),
+    );
+  }
+
 
 // end of file

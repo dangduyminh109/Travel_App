@@ -1,3 +1,4 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import '../../core/constants/app_colors.dart';
 import '../main_screen.dart';
@@ -23,13 +24,41 @@ class LoginScreenState extends State<LoginScreen> {
     super.dispose();
   }
 
-  void handleLogin() {
+  Future<void> handleLogin() async{
     if (formKey.currentState!.validate()) {
-      Navigator.pushAndRemoveUntil(
-        context,
-        MaterialPageRoute(builder: (_) => const MainScreen()),
-        (route) => false,
-      );
+      loading(context);
+
+      try {
+        // 2. Gọi lệnh đăng nhập của Firebase
+        UserCredential userCredential = await FirebaseAuth.instance.signInWithEmailAndPassword(
+          email: emailController.text.trim(),
+          password: passwordController.text.trim(),
+        );
+
+        if (!mounted) return;
+
+        // 3. Tắt Loading khi thành công
+        Navigator.of(context).pop();
+
+        Navigator.pushAndRemoveUntil(
+          context,
+          MaterialPageRoute(builder: (_) => const MainScreen()),
+          (route) => false,
+        );
+      } on FirebaseAuthException catch (e){
+        if (!mounted) return;
+        Navigator.of(context).pop(); // Tắt Loading khi có lỗi
+
+        // 5. Xử lý các mã lỗi phổ biến của Login
+        if (e.code == 'invalid-credential') {
+          ScaffoldMessenger.of(context).showSnackBar(thongBao('Lỗi', 'Sai mật khẩu hoặc tên đăng nhập'));
+        }
+
+      }catch (e) {
+        if (!mounted) return;
+        Navigator.of(context).pop();
+        print("Lỗi không xác định: $e");
+      }
     }
   }
 
