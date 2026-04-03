@@ -1,0 +1,21 @@
+spring:
+  application:
+    name: travelApp
+  datasource:
+    url: jdbc:mysql://localhost:3306/travel_db?createDatabaseIfNotExist=true&useSSL=false&serverTimezone=UTC
+    username: root
+    password: root
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.MySQLDialect
+        format_sql: true
+
+# Security config will be added here later
+jwt:
+  secret: 9a4f4e35455ad59344194465cd3401efb4740209930f78d655f9a744747790b4
+  expiration: 86400000 # 24h

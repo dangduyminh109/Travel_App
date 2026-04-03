@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "208160544728",
+    "project_id": "travelapp-ab318",
+    "storage_bucket": "travelapp-ab318.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:208160544728:android:23375e166ce1f0d21f04ad",
+        "android_client_info": {
+          "package_name": "vn.com.huit.travelapp"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "208160544728-g6ss09r84207kpdu8u4r53qc5cm1tfiv.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "vn.com.huit.travelapp",
+            "certificate_hash": "b2b8ef6733b773976d3d05a4bb9a327bf9b60710"
+          }
+        },
+        {
+          "client_id": "208160544728-8ph75lpkmn165vo04nc3gk4hostdfd0h.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCfAullvUnipjlZP9m7Xtf3a4o2VBn8BkI"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "208160544728-8ph75lpkmn165vo04nc3gk4hostdfd0h.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
