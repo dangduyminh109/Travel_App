@@ -8,7 +8,14 @@ import '../place_detail/place_detail_screen.dart';
 import 'presentation/widgets/filter_bottom_sheet.dart';
 
 class SearchExploreScreen extends StatefulWidget {
-  const SearchExploreScreen({super.key});
+  final String? initialCategory;
+  final bool showBackButton;
+
+  const SearchExploreScreen({
+    super.key, 
+    this.initialCategory, 
+    this.showBackButton = false,
+  });
 
   @override
   State<SearchExploreScreen> createState() => SearchExploreScreenState();
@@ -21,11 +28,15 @@ class SearchExploreScreenState extends State<SearchExploreScreen> {
   final searchController = TextEditingController();
 
   int selectedChipIndex = 0;
+  List<DestinationModel> _allPlaces = [];
   List<DestinationModel> _places = [];
   Set<int> _localFavoriteIds = {};
   bool _isLoading = true;
   String? _error;
   List<String> _filters = ['Tất cả'];
+  bool _isFirstLoad = true;
+  List<int> _activeRatingFilters = [];
+  List<String> _activeRegionFilters = [];
 
   @override
   void initState() {
@@ -49,18 +60,27 @@ class SearchExploreScreenState extends State<SearchExploreScreen> {
       final ids = await _favLocal.getAllFavoriteIds();
       final categories = await _api.getCategories();
       final filters = ['Tất cả', ...categories.map((c) => c.name)];
-      final nextIndex = selectedChipIndex >= filters.length
-          ? 0
-          : selectedChipIndex;
-      final places = await _api.getByCategory(filters[nextIndex]);
+      
+      int nextIndex = selectedChipIndex >= filters.length ? 0 : selectedChipIndex;
+      if (_isFirstLoad && widget.initialCategory != null) {
+        final foundStr = filters.indexOf(widget.initialCategory!);
+        if (foundStr != -1) {
+          nextIndex = foundStr;
+        }
+        _isFirstLoad = false;
+      }
+      
+      final allPlaces = await _api.getAll();
       if (!mounted) return;
+      
       setState(() {
         _localFavoriteIds = ids.toSet();
-        _places = places;
+        _allPlaces = allPlaces;
         _filters = filters;
         selectedChipIndex = nextIndex;
         _isLoading = false;
       });
+      _applyFilters();
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -68,6 +88,42 @@ class SearchExploreScreenState extends State<SearchExploreScreen> {
         _isLoading = false;
       });
     }
+  }
+
+  void _applyFilters() {
+    List<DestinationModel> temp = List.from(_allPlaces);
+    // Filter by Category
+    if (selectedChipIndex > 0 && selectedChipIndex < _filters.length) {
+      final selectedCat = _filters[selectedChipIndex];
+      temp = temp.where((p) => p.categoryName == selectedCat).toList();
+    }
+    // Filter by Ratings
+    if (_activeRatingFilters.isNotEmpty) {
+      temp = temp.where((p) {
+        if (_activeRatingFilters.contains(5) && p.rating == 5.0) return true;
+        if (_activeRatingFilters.contains(4) && p.rating >= 4.0 && p.rating < 5.0) return true;
+        if (_activeRatingFilters.contains(3) && p.rating >= 3.0 && p.rating < 4.0) return true;
+        if (_activeRatingFilters.contains(2) && p.rating >= 2.0 && p.rating < 3.0) return true;
+        if (_activeRatingFilters.contains(1) && p.rating >= 1.0 && p.rating < 2.0) return true;
+        return false;
+      }).toList();
+    }
+    // Filter by Regions
+    if (_activeRegionFilters.isNotEmpty) {
+      temp = temp.where((p) => _activeRegionFilters.contains(p.region)).toList();
+    }
+    // Search keyword
+    final kw = searchController.text.trim().toLowerCase();
+    if (kw.isNotEmpty) {
+      temp = temp.where((p) => 
+        p.title.toLowerCase().contains(kw) || 
+        p.region.toLowerCase().contains(kw)
+      ).toList();
+    }
+
+    setState(() {
+      _places = temp;
+    });
   }
 
   Future<void> _syncFavorites() async {
@@ -96,7 +152,10 @@ class SearchExploreScreenState extends State<SearchExploreScreen> {
       _loadAll();
       return;
     }
-    setState(() => _isLoading = true);
+    setState(() {
+      _isLoading = true;
+      selectedChipIndex = 0; // Tự động về "Tất cả" khi tìm kiếm từ khóa
+    });
     try {
       final places = await _api.search(keyword);
       if (!mounted) return;
@@ -171,6 +230,17 @@ class SearchExploreScreenState extends State<SearchExploreScreen> {
       padding: const EdgeInsets.fromLTRB(20, 16, 20, 4),
       child: Row(
         children: [
+          if (widget.showBackButton)
+            Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: IconButton(
+                icon: const Icon(Icons.arrow_back_ios_new, size: 22),
+                color: AppColors.textPrimary,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+                onPressed: () => Navigator.pop(context),
+              ),
+            ),
           const Expanded(
             child: Text(
               'Tìm kiếm và Khám phá',
@@ -238,15 +308,26 @@ class SearchExploreScreenState extends State<SearchExploreScreen> {
           ),
           const SizedBox(width: 8),
           GestureDetector(
-            onTap: () {
-              showModalBottomSheet(
+            onTap: () async {
+              final result = await showModalBottomSheet(
                 context: context,
                 isScrollControlled: true,
                 shape: const RoundedRectangleBorder(
                   borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
                 ),
-                builder: (_) => const FilterBottomSheet(),
+                builder: (_) => FilterBottomSheet(
+                  activeRatings: _activeRatingFilters,
+                  activeRegions: _activeRegionFilters,
+                ),
               );
+              if (result != null && result is Map) {
+                setState(() {
+                  _activeRatingFilters = List<int>.from(result['ratings'] ?? []);
+                  final regMap = Map<String, bool>.from(result['regions'] ?? {});
+                  _activeRegionFilters = regMap.entries.where((e) => e.value).map((e) => e.key).toList();
+                });
+                _applyFilters();
+              }
             },
             child: Container(
               width: 46,
@@ -280,7 +361,7 @@ class SearchExploreScreenState extends State<SearchExploreScreen> {
                 onSelected: (_) {
                   setState(() => selectedChipIndex = i);
                   searchController.clear();
-                  _loadAll();
+                  _applyFilters();
                 },
                 selectedColor: AppColors.primary,
                 backgroundColor: Colors.white,

@@ -1,6 +1,8 @@
 class ReviewModel {
   final int id;
   final int destinationId;
+  final String? destinationName;
+  final String? destinationImage;
   final String authorName;
   final String avatarUrl;
   final int rating;
@@ -10,6 +12,8 @@ class ReviewModel {
   const ReviewModel({
     required this.id,
     required this.destinationId,
+    this.destinationName,
+    this.destinationImage,
     required this.authorName,
     required this.avatarUrl,
     required this.rating,
@@ -22,6 +26,8 @@ class ReviewModel {
     return ReviewModel(
       id: json['id'] as int,
       destinationId: json['destinationId'] as int,
+      destinationName: json['destinationName'] as String?,
+      destinationImage: json['destinationImage'] as String?,
       authorName: json['authorName'] as String? ?? 'Anonymous',
       avatarUrl: json['avatarUrl'] as String? ?? '',
       rating: json['rating'] as int? ?? 0,

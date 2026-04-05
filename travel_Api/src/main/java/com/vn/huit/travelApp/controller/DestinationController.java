@@ -80,12 +80,13 @@ public class DestinationController {
                 .description(destination.getDescription())
                 .imageUrl(destination.getImageUrl())
                 .region(destination.getRegion())
-                .price(destination.getPrice())
                 .rating(destination.getRating())
                 .reviewCount(destination.getReviewCount())
                 .categoryId(categoryId)
                 .categoryName(categoryName)
                 .tags(destination.getTags())
+                .latitude(destination.getLatitude())
+                .longitude(destination.getLongitude())
                 .build();
     }
 }

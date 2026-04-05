@@ -21,11 +21,44 @@ class ReviewsScreenState extends State<ReviewsScreen> {
   String? _error;
   bool _isSubmitting = false;
   int _rating = 5;
+  String _currentUserName = '';
 
   @override
   void initState() {
     super.initState();
+    _initUser();
     _loadReviews();
+  }
+
+  Future<void> _initUser() async {
+    final user = _authService.currentUser;
+    final session = await _authService.getUserSession();
+    if (mounted) {
+      setState(() {
+        _currentUserName = user?.displayName ?? (session?['displayName'] as String?) ?? 'Ẩn danh';
+      });
+    }
+    
+    // Tự động sync user để phòng hờ trường hợp session cũ chưa được đưa xuống Database
+    if (user != null) {
+      try {
+        await _api.syncUser(
+          uid: user.uid,
+          email: user.email ?? '',
+          displayName: user.displayName ?? '',
+          photoUrl: user.photoURL,
+        );
+      } catch (_) {}
+    } else if (session != null && session['uid'] != null) {
+      try {
+        await _api.syncUser(
+          uid: session['uid']!,
+          email: session['email'] ?? '',
+          displayName: session['displayName'] ?? '',
+          photoUrl: session['photoUrl'],
+        );
+      } catch (_) {}
+    }
   }
 
   @override
@@ -197,10 +230,20 @@ class ReviewsScreenState extends State<ReviewsScreen> {
               children: [
                 CircleAvatar(
                   radius: 24,
-                  backgroundImage: NetworkImage(review.avatarUrl),
+                  backgroundImage: _getAvatarImage(review.avatarUrl),
                   backgroundColor: AppColors.primaryLight.withValues(
                     alpha: 0.3,
                   ),
+                  child: _getAvatarImage(review.avatarUrl) == null
+                      ? Text(
+                          review.authorName.isNotEmpty ? review.authorName[0].toUpperCase() : '?',
+                          style: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
+                        )
+                      : null,
                 ),
                 const SizedBox(width: 12),
                 Expanded(
@@ -226,6 +269,20 @@ class ReviewsScreenState extends State<ReviewsScreen> {
                     ],
                   ),
                 ),
+                if (review.authorName == _currentUserName && _currentUserName != 'Ẩn danh')
+                  PopupMenuButton<String>(
+                    onSelected: (value) {
+                      if (value == 'edit') {
+                        _openWriteReviewSheet(review: review);
+                      } else if (value == 'delete') {
+                        _deleteReview(review.id);
+                      }
+                    },
+                    itemBuilder: (context) => [
+                      const PopupMenuItem(value: 'edit', child: Text('Sửa bình luận')),
+                      const PopupMenuItem(value: 'delete', child: Text('Xóa bình luận')),
+                    ],
+                  ),
               ],
             ),
             const SizedBox(height: 12),
@@ -252,6 +309,34 @@ class ReviewsScreenState extends State<ReviewsScreen> {
         ),
       ),
     );
+  }
+
+  Future<void> _deleteReview(int reviewId) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Xóa bình luận'),
+        content: const Text('Bạn có chắc chắn muốn xóa đánh giá này?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Hủy')),
+          TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Xóa', style: TextStyle(color: Colors.red))),
+        ],
+      ),
+    );
+    if (confirm != true) return;
+    setState(() => _isLoading = true);
+    try {
+       await _api.deleteReview(widget.destinationId, reviewId);
+       _loadReviews();
+       if (mounted) {
+         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Xóa bình luận thành công')));
+       }
+    } catch (e) {
+       setState(() => _isLoading = false);
+       if (mounted) {
+         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Không thể xóa bình luận')));
+       }
+    }
   }
 
   Widget buildErrorState() {
@@ -319,7 +404,9 @@ class ReviewsScreenState extends State<ReviewsScreen> {
     );
   }
 
-  void _openWriteReviewSheet() {
+  void _openWriteReviewSheet({ReviewModel? review}) {
+    _rating = review?.rating ?? 5;
+    _commentController.text = review?.comment ?? '';
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -387,7 +474,7 @@ class ReviewsScreenState extends State<ReviewsScreen> {
                       onPressed: _isSubmitting
                           ? null
                           : () async {
-                              final ok = await _submitReview();
+                              final ok = await _submitReview(reviewId: review?.id);
                               if (!ctx.mounted) return;
                               if (ok) Navigator.pop(ctx);
                             },
@@ -412,7 +499,7 @@ class ReviewsScreenState extends State<ReviewsScreen> {
     );
   }
 
-  Future<bool> _submitReview() async {
+  Future<bool> _submitReview({int? reviewId}) async {
     final comment = _commentController.text.trim();
     if (comment.isEmpty) {
       if (!mounted) return false;
@@ -425,35 +512,71 @@ class ReviewsScreenState extends State<ReviewsScreen> {
     try {
       final user = _authService.currentUser;
       final session = await _authService.getUserSession();
-      final authorName =
-          user?.displayName ??
-          (session?['displayName'] as String?) ??
-          'Ẩn danh';
-      final avatarUrl = user?.photoURL ?? (session?['photoUrl'] as String?);
+      final userId = user?.uid ?? (session?['uid'] as String?);
+      
+      if (userId == null) {
+        if (!mounted) return false;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Vui lòng đăng nhập để đánh giá.')),
+        );
+        return false;
+      }
 
-      final created = await _api.addReview(widget.destinationId, {
-        'authorName': authorName,
-        'avatarUrl': avatarUrl,
-        'rating': _rating,
-        'comment': comment,
-      });
+      // Đảm bảo user tồn tại trong DB trước khi gửi review
+      final email = user?.email ?? (session?['email'] as String?) ?? '';
+      final displayName = user?.displayName ?? (session?['displayName'] as String?) ?? '';
+      final photoUrl = user?.photoURL ?? (session?['photoUrl'] as String?);
+      await _api.syncUser(
+        uid: userId,
+        email: email,
+        displayName: displayName,
+        photoUrl: photoUrl,
+      );
+
+      if (reviewId != null) {
+        await _api.updateReview(widget.destinationId, reviewId, {
+          'userId': userId,
+          'rating': _rating,
+          'comment': comment,
+        });
+        _loadReviews();
+      } else {
+        final created = await _api.addReview(widget.destinationId, {
+          'userId': userId,
+          'rating': _rating,
+          'comment': comment,
+        });
+        setState(() {
+          _reviews = [created, ..._reviews];
+        });
+      }
+      
       _commentController.clear();
       if (!mounted) return false;
-      setState(() {
-        _reviews = [created, ..._reviews];
-      });
       return true;
     } catch (e) {
+      debugPrint('=== REVIEW SUBMIT ERROR: $e ===');
       if (!mounted) return false;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Gửi đánh giá thất bại. Vui lòng thử lại.'),
+        SnackBar(
+          content: Text('Lỗi: $e'),
+          duration: const Duration(seconds: 5),
         ),
       );
       return false;
     } finally {
       if (mounted) setState(() => _isSubmitting = false);
     }
+  }
+
+  ImageProvider? _getAvatarImage(String? url) {
+    if (url == null || url.isEmpty) return null;
+    String resolvedUrl = url;
+    if (resolvedUrl.startsWith('/uploads')) {
+      resolvedUrl = 'http://10.0.2.2:8080$resolvedUrl';
+    }
+    if (!resolvedUrl.startsWith('http')) return null;
+    return NetworkImage(resolvedUrl);
   }
 
   double _averageRating() {

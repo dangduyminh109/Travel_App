@@ -12,7 +12,7 @@ public class DestinationResponse {
     private String description;
     private String imageUrl;
     private String region;
-    private Double price;
+
     private String category;
     private Double rating;
     private Integer reviewCount;

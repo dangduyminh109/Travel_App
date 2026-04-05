@@ -398,16 +398,7 @@ class FavoritesScreenState extends State<FavoritesScreen>
                     const SizedBox(height: 12),
                     Row(
                       children: [
-                        Expanded(
-                          child: Text(
-                            '${_formatPrice(place.price)}/người',
-                            style: const TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w700,
-                              color: AppColors.primary,
-                            ),
-                          ),
-                        ),
+                        const Spacer(),
                         SizedBox(
                           height: 36,
                           child: ElevatedButton(
@@ -482,11 +473,5 @@ class FavoritesScreenState extends State<FavoritesScreen>
     );
   }
 
-  String _formatPrice(double price) {
-    final formatted = price.toInt().toString().replaceAllMapped(
-      RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'),
-      (m) => '${m[1]}.',
-    );
-    return '$formattedđ';
-  }
+
 }

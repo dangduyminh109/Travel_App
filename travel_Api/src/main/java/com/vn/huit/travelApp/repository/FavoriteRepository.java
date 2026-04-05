@@ -5,10 +5,13 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.util.List;
 
+import org.springframework.transaction.annotation.Transactional;
+
 public interface FavoriteRepository extends JpaRepository<Favorite, Long> {
-    List<Favorite> findByUserId(String userId);
+    List<Favorite> findByUser_Username(String username);
 
-    boolean existsByUserIdAndDestination_Id(String userId, Long destinationId);
+    boolean existsByUser_UsernameAndDestination_Id(String username, Long destinationId);
 
-    void deleteByUserIdAndDestination_Id(String userId, Long destinationId);
+    @Transactional
+    void deleteByUser_UsernameAndDestination_Id(String username, Long destinationId);
 }

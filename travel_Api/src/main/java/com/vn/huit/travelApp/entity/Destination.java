@@ -26,11 +26,15 @@ public class Destination {
 
     private String region;
 
-    private Double price;
+
 
     private Double rating;
 
     private Integer reviewCount;
+
+    private Double latitude;
+
+    private Double longitude;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "category_id")

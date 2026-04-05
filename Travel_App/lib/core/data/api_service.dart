@@ -99,6 +99,14 @@ class ApiService {
     return _decodeList(response.body, (item) => ReviewModel.fromJson(item));
   }
 
+  Future<List<ReviewModel>> getUserReviews(String username) async {
+    final uri = Uri.parse('$_baseUrl/users/$username/reviews');
+    final response = await http.get(uri, headers: _headers);
+    if (response.statusCode == 404) return [];
+    _assertOk(response);
+    return _decodeList(response.body, (item) => ReviewModel.fromJson(item));
+  }
+
   Future<ReviewModel> addReview(
     int destinationId,
     Map<String, dynamic> payload,
@@ -112,6 +120,20 @@ class ApiService {
     _assertOk(response);
     final body = jsonDecode(response.body) as Map<String, dynamic>;
     return ReviewModel.fromJson(body['data'] as Map<String, dynamic>);
+  }
+
+  Future<ReviewModel> updateReview(int destinationId, int reviewId, Map<String, dynamic> payload) async {
+    final uri = Uri.parse('$_baseUrl/destinations/$destinationId/reviews/$reviewId');
+    final response = await http.put(uri, headers: _headers, body: jsonEncode(payload));
+    _assertOk(response);
+    final body = jsonDecode(response.body) as Map<String, dynamic>;
+    return ReviewModel.fromJson(body['data'] as Map<String, dynamic>);
+  }
+
+  Future<void> deleteReview(int destinationId, int reviewId) async {
+    final uri = Uri.parse('$_baseUrl/destinations/$destinationId/reviews/$reviewId');
+    final response = await http.delete(uri, headers: _headers);
+    _assertOk(response);
   }
 
   Future<List<int>> getFavoriteIds(String userId) async {
@@ -142,6 +164,59 @@ class ApiService {
       response.body,
       (value) => (value as num).toInt(),
     );
+  }
+
+  Future<Map<String, dynamic>> getUserProfile(String username) async {
+    final uri = Uri.parse('$_baseUrl/users/$username');
+    final response = await http.get(uri, headers: _headers);
+    if (response.statusCode == 404) return {}; // Handle not found gracefully
+    _assertOk(response);
+    final body = jsonDecode(response.body) as Map<String, dynamic>;
+    return body['data'] as Map<String, dynamic>;
+  }
+
+  Future<void> syncUser({
+    required String uid,
+    required String email,
+    required String displayName,
+    String? photoUrl,
+  }) async {
+    final uri = Uri.parse('$_baseUrl/users/sync');
+    final response = await http.post(
+      uri,
+      headers: _headers,
+      body: jsonEncode({
+        'uid': uid,
+        'email': email,
+        'displayName': displayName,
+        if (photoUrl != null) 'photoUrl': photoUrl,
+      }),
+    );
+    _assertOk(response);
+  }
+
+  Future<Map<String, dynamic>> updateUserProfile({
+    required String username,
+    String? fullName,
+    String? avatarPath,
+  }) async {
+    final uri = Uri.parse('$_baseUrl/users/$username');
+    final request = http.MultipartRequest('PUT', uri);
+
+    if (fullName != null && fullName.isNotEmpty) {
+      request.fields['fullName'] = fullName;
+    }
+
+    if (avatarPath != null && avatarPath.isNotEmpty) {
+      request.files.add(await http.MultipartFile.fromPath('avatar', avatarPath));
+    }
+
+    final streamedResponse = await request.send();
+    final response = await http.Response.fromStream(streamedResponse);
+    _assertOk(response);
+
+    final body = jsonDecode(response.body) as Map<String, dynamic>;
+    return body['data'] as Map<String, dynamic>;
   }
 
   List<T> _decodeList<T>(String body, T Function(Map<String, dynamic>) mapper) {

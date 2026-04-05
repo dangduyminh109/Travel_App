@@ -4,6 +4,7 @@ import '../../core/data/api_service.dart';
 import '../../core/data/category_model.dart';
 import '../../core/data/destination_model.dart';
 import '../place_detail/place_detail_screen.dart';
+import '../search/search_explore_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -197,34 +198,47 @@ class HomeScreenState extends State<HomeScreen> {
   }
 
   Widget buildCategoryChip(CategoryModel item) {
-    return SizedBox(
-      width: 68,
-      child: Column(
-        children: [
-          Container(
-            width: 56,
-            height: 56,
-            decoration: const BoxDecoration(
-              color: Colors.white,
-              shape: BoxShape.circle,
-            ),
-            child: Icon(
-              _iconForCategory(item.icon),
-              color: AppColors.primary,
-              size: 28,
+    return GestureDetector(
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => SearchExploreScreen(
+              initialCategory: item.name,
+              showBackButton: true,
             ),
           ),
-          const SizedBox(height: 6),
-          Text(
-            item.name,
-            style: const TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-              color: Colors.white,
+        );
+      },
+      child: SizedBox(
+        width: 68,
+        child: Column(
+          children: [
+            Container(
+              width: 56,
+              height: 56,
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                _iconForCategory(item.icon),
+                color: AppColors.primary,
+                size: 28,
+              ),
             ),
-            textAlign: TextAlign.center,
-          ),
-        ],
+            const SizedBox(height: 6),
+            Text(
+              item.name,
+              style: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: Colors.white,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
       ),
     );
   }

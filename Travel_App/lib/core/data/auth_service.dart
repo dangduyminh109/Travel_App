@@ -1,6 +1,7 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'auth_local_service.dart';
+import 'api_service.dart';
 
 class AuthService {
   static final AuthService _instance = AuthService._internal();
@@ -57,6 +58,15 @@ class AuthService {
       displayName: displayName,
       provider: 'password',
     );
+    try {
+      await ApiService().syncUser(
+        uid: user.uid,
+        email: email,
+        displayName: displayName,
+      );
+    } catch (e) {
+      // Ignored for resilience
+    }
     return _firebaseAuth.currentUser;
   }
 
@@ -76,6 +86,16 @@ class AuthService {
       provider: 'password',
       photoUrl: user.photoURL,
     );
+    try {
+      await ApiService().syncUser(
+        uid: user.uid,
+        email: user.email ?? email,
+        displayName: user.displayName ?? '',
+        photoUrl: user.photoURL,
+      );
+    } catch (e) {
+      // Ignored
+    }
     return user;
   }
 
@@ -101,6 +121,16 @@ class AuthService {
       provider: 'google',
       photoUrl: user.photoURL ?? account.photoUrl,
     );
+    try {
+      await ApiService().syncUser(
+        uid: user.uid,
+        email: user.email ?? account.email,
+        displayName: user.displayName ?? account.displayName ?? '',
+        photoUrl: user.photoURL ?? account.photoUrl,
+      );
+    } catch (e) {
+      // Ignored
+    }
     return user;
   }
 

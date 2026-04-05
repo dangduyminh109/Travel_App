@@ -16,10 +16,12 @@ public class DestinationDto {
     private String description;
     private String imageUrl;
     private String region;
-    private Double price;
+
     private Double rating;
     private Integer reviewCount;
     private Long categoryId;
     private String categoryName;
     private String tags;
+    private Double latitude;
+    private Double longitude;
 }

@@ -17,7 +17,6 @@ public class User {
     @Column(unique = true, nullable = false)
     private String username;
 
-    @Column(nullable = false)
     private String password;
 
     @Column(unique = true, nullable = false)
@@ -25,6 +24,9 @@ public class User {
 
     private String fullName;
     private String avatarUrl;
+    
+    private String address;
+    private String phoneNumber;
 
     @Enumerated(EnumType.STRING)
     private Role role;

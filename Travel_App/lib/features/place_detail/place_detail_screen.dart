@@ -5,6 +5,7 @@ import '../../core/data/api_service.dart';
 import '../../core/data/destination_model.dart';
 import '../../core/data/favorite_local_service.dart';
 import 'presentation/reviews_screen.dart';
+import 'presentation/map_screen.dart';
 
 class PlaceDetailScreen extends StatefulWidget {
   final DestinationModel destination;
@@ -20,26 +21,60 @@ class PlaceDetailScreenState extends State<PlaceDetailScreen> {
   final _authService = AuthService();
   String? _userId;
   bool isFavorited = false;
+  late DestinationModel _destination;
 
   @override
   void initState() {
     super.initState();
+    _destination = widget.destination;
     _initUserAndFavorite();
+  }
+
+  Future<void> _refreshDestination() async {
+    try {
+      final updated = await _api.getById(_destination.id);
+      if (mounted) {
+        setState(() {
+          _destination = updated;
+        });
+      }
+    } catch (_) {
+      // Ignore
+    }
   }
 
   Future<void> _initUserAndFavorite() async {
     final firebaseUser = _authService.currentUser;
+    final session = await _authService.getUserSession();
+    
     if (firebaseUser != null) {
       _userId = firebaseUser.uid;
-    } else {
-      final session = await _authService.getUserSession();
-      _userId = session?['uid'] as String?;
+      try {
+        await _api.syncUser(
+          uid: firebaseUser.uid,
+          email: firebaseUser.email ?? '',
+          displayName: firebaseUser.displayName ?? '',
+          photoUrl: firebaseUser.photoURL,
+        );
+      } catch (_) {}
+    } else if (session != null) {
+      _userId = session['uid'] as String?;
+      if (_userId != null) {
+        try {
+          await _api.syncUser(
+            uid: _userId!,
+            email: session['email'] ?? '',
+            displayName: session['displayName'] ?? '',
+            photoUrl: session['photoUrl'],
+          );
+        } catch (_) {}
+      }
     }
     await _checkFavorite();
   }
 
   Future<void> _checkFavorite() async {
-    final result = await _favLocal.isFavorite(widget.destination.id);
+    final result = await _favLocal.isFavorite(_destination.id);
     if (!mounted) return;
     setState(() => isFavorited = result);
   }
@@ -53,11 +88,11 @@ class PlaceDetailScreenState extends State<PlaceDetailScreen> {
       return;
     }
     if (isFavorited) {
-      await _favLocal.removeFavorite(widget.destination.id);
-      _syncRemove(widget.destination.id);
+      await _favLocal.removeFavorite(_destination.id);
+      _syncRemove(_destination.id);
     } else {
-      await _favLocal.addFavorite(widget.destination.id);
-      _syncAdd(widget.destination.id);
+      await _favLocal.addFavorite(_destination.id);
+      _syncAdd(_destination.id);
     }
     if (!mounted) return;
     setState(() => isFavorited = !isFavorited);
@@ -104,7 +139,7 @@ class PlaceDetailScreenState extends State<PlaceDetailScreen> {
       height: size.height * 0.42,
       width: double.infinity,
       child: Image.network(
-        widget.destination.imageUrl,
+        _destination.imageUrl,
         fit: BoxFit.cover,
         errorBuilder: (context, error, stackTrace) => Container(
           decoration: const BoxDecoration(
@@ -171,7 +206,7 @@ class PlaceDetailScreenState extends State<PlaceDetailScreen> {
   }
 
   Widget buildContentSheet(Size size) {
-    final tags = widget.destination.tagsList;
+    final tags = _destination.tagsList;
 
     return DraggableScrollableSheet(
       initialChildSize: 0.58,
@@ -209,7 +244,7 @@ class PlaceDetailScreenState extends State<PlaceDetailScreen> {
                 ),
               ),
               Text(
-                widget.destination.title.toUpperCase(),
+                _destination.title.toUpperCase(),
                 style: const TextStyle(
                   fontSize: 26,
                   fontWeight: FontWeight.w800,
@@ -227,25 +262,9 @@ class PlaceDetailScreenState extends State<PlaceDetailScreen> {
                   ),
                   const SizedBox(width: 4),
                   Text(
-                    widget.destination.region,
+                    _destination.region,
                     style: const TextStyle(
                       fontSize: 14,
-                      color: AppColors.textSecondary,
-                    ),
-                  ),
-                  const Spacer(),
-                  Text(
-                    _formatPrice(widget.destination.price),
-                    style: const TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w800,
-                      color: AppColors.primary,
-                    ),
-                  ),
-                  const Text(
-                    '/người',
-                    style: TextStyle(
-                      fontSize: 12,
                       color: AppColors.textSecondary,
                     ),
                   ),
@@ -259,7 +278,7 @@ class PlaceDetailScreenState extends State<PlaceDetailScreen> {
               ),
               const SizedBox(height: 20),
               Text(
-                widget.destination.description,
+                _destination.description,
                 style: const TextStyle(
                   fontSize: 15,
                   height: 1.6,
@@ -273,9 +292,11 @@ class PlaceDetailScreenState extends State<PlaceDetailScreen> {
                     context,
                     MaterialPageRoute(
                       builder: (_) =>
-                          ReviewsScreen(destinationId: widget.destination.id),
+                          ReviewsScreen(destinationId: _destination.id),
                     ),
-                  );
+                  ).then((_) {
+                    _refreshDestination();
+                  });
                 },
                 child: Container(
                   padding: const EdgeInsets.symmetric(
@@ -294,7 +315,7 @@ class PlaceDetailScreenState extends State<PlaceDetailScreen> {
                       const Icon(Icons.star, color: Colors.amber, size: 22),
                       const SizedBox(width: 8),
                       Text(
-                        widget.destination.rating.toStringAsFixed(1),
+                        _destination.rating.toStringAsFixed(1),
                         style: const TextStyle(
                           fontSize: 18,
                           fontWeight: FontWeight.w800,
@@ -303,7 +324,7 @@ class PlaceDetailScreenState extends State<PlaceDetailScreen> {
                       ),
                       const SizedBox(width: 6),
                       Text(
-                        '(${widget.destination.reviewCount} đánh giá)',
+                        '(${_destination.reviewCount} đánh giá)',
                         style: const TextStyle(
                           fontSize: 13,
                           color: AppColors.textSecondary,
@@ -373,7 +394,14 @@ class PlaceDetailScreenState extends State<PlaceDetailScreen> {
       child: SizedBox(
         height: 52,
         child: ElevatedButton.icon(
-          onPressed: () {},
+          onPressed: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => MapScreen(destination: _destination),
+              ),
+            );
+          },
           icon: const Icon(Icons.map_outlined, size: 20),
           label: const Text('Mở bản đồ', style: TextStyle(fontSize: 16)),
           style: ElevatedButton.styleFrom(
@@ -386,13 +414,5 @@ class PlaceDetailScreenState extends State<PlaceDetailScreen> {
         ),
       ),
     );
-  }
-
-  String _formatPrice(double price) {
-    final formatted = price.toInt().toString().replaceAllMapped(
-      RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'),
-      (m) => '${m[1]}.',
-    );
-    return '$formattedđ';
   }
 }

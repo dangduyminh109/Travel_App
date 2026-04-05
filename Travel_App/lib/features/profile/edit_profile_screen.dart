@@ -1,6 +1,9 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/data/auth_service.dart';
+import '../../core/data/api_service.dart';
 
 class EditProfileScreen extends StatefulWidget {
   const EditProfileScreen({super.key});
@@ -14,8 +17,14 @@ class EditProfileScreenState extends State<EditProfileScreen> {
   final emailController = TextEditingController();
   final dobController = TextEditingController();
   final addressController = TextEditingController();
+  
   final AuthService _authService = AuthService();
+  final ApiService _apiService = ApiService();
+  final ImagePicker _picker = ImagePicker();
+  
+  String? _userId;
   String? _photoUrl;
+  File? _selectedImage;
   bool _isSaving = false;
 
   @override
@@ -27,16 +36,32 @@ class EditProfileScreenState extends State<EditProfileScreen> {
   Future<void> _loadUserData() async {
     final user = _authService.currentUser;
     if (user != null) {
-      nameController.text = user.displayName ?? '';
+      _userId = user.uid;
       emailController.text = user.email ?? '';
-      _photoUrl = user.photoURL;
     } else {
-      // Fallback to local session
       final session = await _authService.getUserSession();
       if (session != null) {
-        nameController.text = (session['displayName'] as String?) ?? '';
+        _userId = session['uid'] as String?;
         emailController.text = (session['email'] as String?) ?? '';
-        _photoUrl = (session['photoUrl'] as String?);
+      }
+    }
+
+    if (_userId != null) {
+      try {
+        final profile = await _apiService.getUserProfile(_userId!);
+        if (profile.isNotEmpty) {
+          nameController.text = profile['fullName'] ?? profile['username'] ?? '';
+          
+          if (profile['avatarUrl'] != null && profile['avatarUrl'].toString().isNotEmpty) {
+            String url = profile['avatarUrl'];
+            if (url.startsWith('/uploads')) {
+               url = 'http://10.0.2.2:8080$url'; 
+            }
+            _photoUrl = url;
+          }
+        }
+      } catch (e) {
+        debugPrint('Error fetching profile: $e');
       }
     }
     if (mounted) setState(() {});
@@ -51,6 +76,19 @@ class EditProfileScreenState extends State<EditProfileScreen> {
     super.dispose();
   }
 
+  Future<void> _pickImage() async {
+    final XFile? image = await _picker.pickImage(
+      source: ImageSource.gallery,
+      maxWidth: 800,
+      imageQuality: 75,
+    );
+    if (image != null) {
+      setState(() {
+        _selectedImage = File(image.path);
+      });
+    }
+  }
+
   Future<void> handleSave() async {
     final name = nameController.text.trim();
     if (name.isEmpty) {
@@ -63,14 +101,49 @@ class EditProfileScreenState extends State<EditProfileScreen> {
       return;
     }
 
+    if (_userId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Lỗi: Bạn chưa đăng nhập'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+
     setState(() => _isSaving = true);
     try {
-      final user = _authService.currentUser;
-      if (user != null) {
-        await user.updateDisplayName(name);
-        await user.reload();
-        await _authService.refreshLocalSession();
+      // Đảm bảo user tồn tại trong DB trước khi update
+      final firebaseUser = _authService.currentUser;
+      final session = await _authService.getUserSession();
+      await _apiService.syncUser(
+        uid: _userId!,
+        email: firebaseUser?.email ?? (session?['email'] as String?) ?? '',
+        displayName: name,
+        photoUrl: firebaseUser?.photoURL ?? (session?['photoUrl'] as String?),
+      );
+
+      final updatedProfile = await _apiService.updateUserProfile(
+        username: _userId!,
+        fullName: name,
+        avatarPath: _selectedImage?.path,
+      );
+
+      // Cập nhật lại UI sau khi save thành công
+      if (updatedProfile['avatarUrl'] != null) {
+         String url = updatedProfile['avatarUrl'];
+         if (url.startsWith('/uploads')) {
+            url = 'http://10.0.2.2:8080$url'; 
+         }
+         _photoUrl = url;
       }
+      _selectedImage = null; // reset local file
+      
+      // Update firebase profile display name if logged in via firebase
+      if (firebaseUser != null) {
+        await firebaseUser.updateDisplayName(name);
+      }
+
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -82,8 +155,8 @@ class EditProfileScreenState extends State<EditProfileScreen> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Lưu thất bại. Vui lòng thử lại'),
+        SnackBar(
+          content: Text('Lưu thất bại. $e'),
           behavior: SnackBarBehavior.floating,
           backgroundColor: AppColors.error,
         ),
@@ -113,7 +186,8 @@ class EditProfileScreenState extends State<EditProfileScreen> {
     if (picked != null) {
       setState(() {
         dobController.text =
-            '${picked.day.toString().padLeft(2, '0')}/${picked.month.toString().padLeft(2, '0')}/${picked.year}';
+        '${picked.day.toString().padLeft(2, '0')}/${picked.month.toString().padLeft(2, '0')}/${picked.year}';
+
       });
     }
   }
@@ -170,36 +244,43 @@ class EditProfileScreenState extends State<EditProfileScreen> {
     final hasPhoto = _photoUrl != null && _photoUrl!.isNotEmpty;
     final name = nameController.text;
 
+    ImageProvider? imageProvider;
+    if (_selectedImage != null) {
+      imageProvider = FileImage(_selectedImage!);
+    } else if (hasPhoto) {
+      imageProvider = NetworkImage(_photoUrl!);
+    }
+
     return Center(
       child: Stack(
         children: [
           CircleAvatar(
             radius: 52,
-            backgroundColor: AppColors.primaryLight.withValues(alpha: 0.2),
+            backgroundColor: AppColors.primaryLight.withOpacity(0.2),
             child: CircleAvatar(
               radius: 49,
-              backgroundImage: hasPhoto ? NetworkImage(_photoUrl!) : null,
+              backgroundImage: imageProvider,
               onBackgroundImageError: hasPhoto
                   ? (exception, stackTrace) {}
                   : null,
-              backgroundColor: AppColors.primaryLight.withValues(alpha: 0.3),
-              child: hasPhoto
-                  ? null
-                  : Text(
+              backgroundColor: AppColors.primaryLight.withOpacity(0.3),
+              child: (_selectedImage == null && !hasPhoto)
+                  ? Text(
                       name.isNotEmpty ? name[0].toUpperCase() : '?',
                       style: const TextStyle(
                         fontSize: 36,
                         fontWeight: FontWeight.bold,
                         color: Colors.white,
                       ),
-                    ),
+                    )
+                  : null,
             ),
           ),
           Positioned(
             bottom: 0,
             right: 0,
             child: GestureDetector(
-              onTap: () {},
+              onTap: _pickImage,
               child: Container(
                 width: 34,
                 height: 34,
@@ -209,7 +290,7 @@ class EditProfileScreenState extends State<EditProfileScreen> {
                   border: Border.all(color: Colors.white, width: 2.5),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.12),
+                      color: Colors.black.withOpacity(0.12),
                       blurRadius: 6,
                       offset: const Offset(0, 2),
                     ),

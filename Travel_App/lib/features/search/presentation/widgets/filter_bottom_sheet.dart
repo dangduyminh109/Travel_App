@@ -2,37 +2,43 @@ import 'package:flutter/material.dart';
 import '../../../../core/constants/app_colors.dart';
 
 class FilterBottomSheet extends StatefulWidget {
-  const FilterBottomSheet({super.key});
+  final List<int> activeRatings;
+  final List<String> activeRegions;
+
+  const FilterBottomSheet({
+    super.key,
+    required this.activeRatings,
+    required this.activeRegions,
+  });
 
   @override
-  State<FilterBottomSheet> createState() => FilterBottomSheetState();
+  State<FilterBottomSheet> createState() => _FilterBottomSheetState();
 }
 
-class FilterBottomSheetState extends State<FilterBottomSheet> {
-  bool fourStars = true;
-  bool fiveStars = false;
-  bool topRated = false;
+class _FilterBottomSheetState extends State<FilterBottomSheet> {
+  late bool star1;
+  late bool star2;
+  late bool star3;
+  late bool star4;
+  late bool star5;
 
-  RangeValues priceRange = const RangeValues(0.5, 3.0);
+  late Map<String, bool> regions;
 
-  final Map<String, bool> regions = {
-    'Miền Bắc': true,
-    'Miền Trung': false,
-    'Miền Nam': false,
-    'Tây Nguyên': false,
-  };
+  @override
+  void initState() {
+    super.initState();
+    star1 = widget.activeRatings.contains(1);
+    star2 = widget.activeRatings.contains(2);
+    star3 = widget.activeRatings.contains(3);
+    star4 = widget.activeRatings.contains(4);
+    star5 = widget.activeRatings.contains(5);
 
-  String get rangeLabel {
-    final start = (priceRange.start * 1000000).round();
-    final end = (priceRange.end * 1000000).round();
-    return 'Phạm vi: ${formatCurrency(start)} - ${formatCurrency(end)}';
-  }
-
-  String formatCurrency(int value) {
-    if (value >= 1000000) {
-      return '${(value / 1000000).toStringAsFixed(1)}.000.000đ'.replaceAll('.0', '');
-    }
-    return '${value ~/ 1000}0.000đ';
+    regions = {
+      'Miền Bắc': widget.activeRegions.contains('Miền Bắc'),
+      'Miền Trung': widget.activeRegions.contains('Miền Trung'),
+      'Miền Nam': widget.activeRegions.contains('Miền Nam'),
+      'Miền Núi': widget.activeRegions.contains('Miền Núi'),
+    };
   }
 
   @override
@@ -54,9 +60,6 @@ class FilterBottomSheetState extends State<FilterBottomSheet> {
             buildSectionTitle('Đánh giá'),
             buildRatingOptions(),
             const SizedBox(height: 20),
-            buildSectionTitle('Giá'),
-            buildPriceSection(),
-            const SizedBox(height: 20),
             buildSectionTitle('Khu vực'),
             buildRegionSection(),
             const SizedBox(height: 24),
@@ -65,12 +68,13 @@ class FilterBottomSheetState extends State<FilterBottomSheet> {
               height: 52,
               child: ElevatedButton(
                 onPressed: () => Navigator.pop(context, {
-                  'ratings': {
-                    '4plus': fourStars,
-                    '5stars': fiveStars,
-                    'topRated': topRated,
-                  },
-                  'priceRange': priceRange,
+                  'ratings': [
+                    if (star1) 1,
+                    if (star2) 2,
+                    if (star3) 3,
+                    if (star4) 4,
+                    if (star5) 5,
+                  ],
                   'regions': Map<String, bool>.from(regions),
                 }),
                 style: ElevatedButton.styleFrom(
@@ -129,22 +133,34 @@ class FilterBottomSheetState extends State<FilterBottomSheet> {
     return Column(
       children: [
         ratingTile(
-          label: '4 sao trở lên',
-          value: fourStars,
+          label: '1 sao',
+          value: star1,
+          stars: 1,
+          onChanged: (v) => setState(() => star1 = v ?? false),
+        ),
+        ratingTile(
+          label: '2 sao',
+          value: star2,
+          stars: 2,
+          onChanged: (v) => setState(() => star2 = v ?? false),
+        ),
+        ratingTile(
+          label: '3 sao',
+          value: star3,
+          stars: 3,
+          onChanged: (v) => setState(() => star3 = v ?? false),
+        ),
+        ratingTile(
+          label: '4 sao',
+          value: star4,
           stars: 4,
-          onChanged: (v) => setState(() => fourStars = v ?? false),
+          onChanged: (v) => setState(() => star4 = v ?? false),
         ),
         ratingTile(
           label: '5 sao',
-          value: fiveStars,
+          value: star5,
           stars: 5,
-          onChanged: (v) => setState(() => fiveStars = v ?? false),
-        ),
-        ratingTile(
-          label: 'Đánh giá cao nhất',
-          value: topRated,
-          stars: null,
-          onChanged: (v) => setState(() => topRated = v ?? false),
+          onChanged: (v) => setState(() => star5 = v ?? false),
         ),
       ],
     );
@@ -190,43 +206,7 @@ class FilterBottomSheetState extends State<FilterBottomSheet> {
     );
   }
 
-  Widget buildPriceSection() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.only(top: 8, bottom: 4),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: const [
-              Text('0đ', style: TextStyle(color: AppColors.textSecondary)),
-              Text('5.000.000đ+', style: TextStyle(color: AppColors.textSecondary)),
-            ],
-          ),
-        ),
-        RangeSlider(
-          values: priceRange,
-          min: 0,
-          max: 5,
-          divisions: 10,
-          labels: RangeLabels(
-            '${(priceRange.start * 1000000).round().toStringAsFixed(0)}đ',
-            '${(priceRange.end * 1000000).round().toStringAsFixed(0)}đ',
-          ),
-          activeColor: AppColors.primary,
-          inactiveColor: AppColors.divider,
-          onChanged: (values) => setState(() => priceRange = values),
-        ),
-        Text(
-          rangeLabel,
-          style: const TextStyle(
-            fontSize: 12,
-            color: AppColors.textSecondary,
-          ),
-        ),
-      ],
-    );
-  }
+
 
   Widget buildRegionSection() {
     return Wrap(

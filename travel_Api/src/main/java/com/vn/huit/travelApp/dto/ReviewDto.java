@@ -12,6 +12,8 @@ import lombok.NoArgsConstructor;
 public class ReviewDto {
     private Long id;
     private Long destinationId;
+    private String destinationName;
+    private String destinationImage;
     private String authorName;
     private String avatarUrl;
     private Integer rating;

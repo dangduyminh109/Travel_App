@@ -10,8 +10,7 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 @NoArgsConstructor
 public class ReviewCreateRequest {
-    private String authorName;
-    private String avatarUrl;
+    private String userId;
     private Integer rating;
     private String comment;
 }
