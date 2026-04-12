@@ -1,3 +1,3 @@
 class ApiKeys {
-  static const String googleMapsApiKey = 'YOUR_API_KEY_HERE';
+  static const String googleMapsApiKey = 'AIzaSyD0UbjDR7T37itPVM3jUyNJKJScIHw5aHs';
 }

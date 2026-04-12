@@ -136,6 +136,33 @@ class ApiService {
     _assertOk(response);
   }
 
+  Future<void> addReply(int reviewId, String userId, String content) async {
+    final uri = Uri.parse('$_baseUrl/destinations/reviews/$reviewId/replies');
+    final response = await http.post(
+      uri,
+      headers: _headers,
+      body: jsonEncode({
+        'userId': userId,
+        'comment': content,
+      }),
+    );
+    _assertOk(response);
+  }
+
+  Future<Map<String, dynamic>> toggleLike(int reviewId, String userId, {String type = 'LIKE'}) async {
+    final uri = Uri.parse('$_baseUrl/destinations/reviews/$reviewId/like?userId=$userId&type=$type');
+    final response = await http.post(uri, headers: _headers);
+    _assertOk(response);
+    final body = jsonDecode(response.body) as Map<String, dynamic>;
+    return body['data'] as Map<String, dynamic>;
+  }
+
+  Future<void> deleteReply(int reviewId, int replyId, String userId) async {
+    final uri = Uri.parse('$_baseUrl/destinations/reviews/$reviewId/replies/$replyId?userId=$userId');
+    final response = await http.delete(uri, headers: _headers);
+    _assertOk(response);
+  }
+
   Future<List<int>> getFavoriteIds(String userId) async {
     final uri = Uri.parse('$_baseUrl/users/$userId/favorites');
     final response = await http.get(uri, headers: _headers);

@@ -5,9 +5,7 @@ import com.vn.huit.travelApp.dto.ReviewCreateRequest;
 import com.vn.huit.travelApp.dto.ReviewDto;
 import com.vn.huit.travelApp.entity.Destination;
 import com.vn.huit.travelApp.entity.Review;
-import com.vn.huit.travelApp.repository.DestinationRepository;
-import com.vn.huit.travelApp.repository.ReviewRepository;
-import com.vn.huit.travelApp.repository.UserRepository;
+import com.vn.huit.travelApp.repository.*;
 import com.vn.huit.travelApp.entity.User;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -24,6 +22,9 @@ public class ReviewController {
     private final DestinationRepository destinationRepository;
     private final ReviewRepository reviewRepository;
     private final UserRepository userRepository;
+    private final ReplyRepository replyRepository;
+    private final ReviewLikeRepository reviewLikeRepository;
+    private final com.vn.huit.travelApp.service.FirebaseRealtimeService firebaseRealtimeService;
 
     @GetMapping("/{destinationId}/reviews")
     public ResponseEntity<ApiResponse<List<ReviewDto>>> getReviews(@PathVariable Long destinationId) {
@@ -77,7 +78,26 @@ public class ReviewController {
         destination.setRating(nextRating);
         destinationRepository.save(destination);
 
-        return ResponseEntity.ok(ApiResponse.success(toDto(saved), "Review added"));
+        // SYNC TO FIREBASE
+        ReviewDto dto = toDto(saved);
+        java.util.Map<String, Object> firebaseData = new java.util.HashMap<>();
+        firebaseData.put("id", dto.getId());
+        firebaseData.put("authorName", dto.getAuthorName());
+        firebaseData.put("avatarUrl", dto.getAvatarUrl());
+        firebaseData.put("rating", dto.getRating());
+        firebaseData.put("comment", dto.getComment());
+        firebaseData.put("createdAt", dto.getCreatedAt());
+        firebaseData.put("destinationName", dto.getDestinationName());
+        firebaseRealtimeService.pushReview(destinationId, firebaseData);
+
+        // NOTIFY
+        String authorName = dto.getAuthorName();
+        firebaseRealtimeService.pushNotification(
+            "Đánh giá mới",
+            authorName + " đã đánh giá " + destination.getTitle(),
+            "REVIEW");
+
+        return ResponseEntity.ok(ApiResponse.success(dto, "Review added"));
     }
 
     @PutMapping("/{destinationId}/reviews/{reviewId}")
@@ -103,7 +123,18 @@ public class ReviewController {
         
         recalculateDestinationRating(destinationId);
 
-        return ResponseEntity.ok(ApiResponse.success(toDto(saved), "Review updated"));
+        // SYNC TO FIREBASE
+        ReviewDto dto = toDto(saved);
+        java.util.Map<String, Object> firebaseData = new java.util.HashMap<>();
+        firebaseData.put("id", dto.getId());
+        firebaseData.put("authorName", dto.getAuthorName());
+        firebaseData.put("avatarUrl", dto.getAvatarUrl());
+        firebaseData.put("rating", dto.getRating());
+        firebaseData.put("comment", dto.getComment());
+        firebaseData.put("createdAt", dto.getCreatedAt());
+        firebaseRealtimeService.pushReview(destinationId, firebaseData);
+
+        return ResponseEntity.ok(ApiResponse.success(dto, "Review updated"));
     }
 
     @DeleteMapping("/{destinationId}/reviews/{reviewId}")
@@ -119,7 +150,131 @@ public class ReviewController {
         
         recalculateDestinationRating(destinationId);
 
+        // SYNC TO FIREBASE
+        firebaseRealtimeService.removeReview(destinationId, reviewId);
+
         return ResponseEntity.ok(ApiResponse.success(null, "Review deleted"));
+    }
+
+    @PostMapping("/reviews/{reviewId}/replies")
+    public ResponseEntity<ApiResponse<java.util.Map<String, Object>>> addReply(
+            @PathVariable Long reviewId,
+            @RequestBody ReviewCreateRequest request) {
+        Review review = reviewRepository.findById(reviewId).orElse(null);
+        if (review == null) {
+            return ResponseEntity.status(404).body(ApiResponse.error("Review not found"));
+        }
+        User user = userRepository.findByUsername(request.getUserId()).orElse(null);
+        if (user == null) {
+            return ResponseEntity.status(404).body(ApiResponse.error("User not found"));
+        }
+
+        com.vn.huit.travelApp.entity.Reply reply = com.vn.huit.travelApp.entity.Reply.builder()
+                .user(user)
+                .content(request.getComment()) // Reuse comment field as content
+                .createdAt(LocalDateTime.now())
+                .review(review)
+                .build();
+        com.vn.huit.travelApp.entity.Reply saved = replyRepository.save(reply);
+
+        // SYNC TO FIREBASE
+        java.util.Map<String, Object> firebaseData = new java.util.HashMap<>();
+        firebaseData.put("id", saved.getId());
+        firebaseData.put("userId", user.getUsername());
+        firebaseData.put("authorName", user.getFullName());
+        firebaseData.put("content", saved.getContent());
+        firebaseData.put("createdAt", saved.getCreatedAt().toString());
+        firebaseRealtimeService.pushReply(reviewId, firebaseData);
+
+        // NOTIFY the review author
+        String reviewAuthor = review.getUser() != null ? review.getUser().getFullName() : "";
+        String replyAuthor = user.getFullName() != null ? user.getFullName() : user.getUsername();
+        if (!user.getUsername().equals(review.getUser().getUsername())) {
+            firebaseRealtimeService.pushNotification(
+                "Phản hồi mới",
+                replyAuthor + " đã phản hồi đánh giá của " + reviewAuthor,
+                "REPLY");
+        }
+
+        return ResponseEntity.ok(ApiResponse.success(firebaseData, "Reply added"));
+    }
+
+    @PostMapping("/reviews/{reviewId}/like")
+    public ResponseEntity<ApiResponse<java.util.Map<String, Object>>> toggleLike(
+            @PathVariable Long reviewId,
+            @RequestParam String userId,
+            @RequestParam(defaultValue = "LIKE") String type) {
+        Review review = reviewRepository.findById(reviewId).orElse(null);
+        if (review == null) return ResponseEntity.status(404).body(ApiResponse.error("Review not found"));
+        
+        User user = userRepository.findByUsername(userId).orElse(null);
+        if (user == null) return ResponseEntity.status(404).body(ApiResponse.error("User not found"));
+
+        java.util.Optional<com.vn.huit.travelApp.entity.ReviewLike> existing = reviewLikeRepository.findByReviewAndUser(review, user);
+        String resultType;
+        if (existing.isPresent()) {
+            if (existing.get().getReactionType().equals(type)) {
+                // Same type → toggle off (remove)
+                reviewLikeRepository.delete(existing.get());
+                resultType = "NONE";
+            } else {
+                // Different type → switch (e.g. LIKE → DISLIKE)
+                existing.get().setReactionType(type);
+                reviewLikeRepository.save(existing.get());
+                resultType = type;
+            }
+        } else {
+            // No existing → create new
+            reviewLikeRepository.save(com.vn.huit.travelApp.entity.ReviewLike.builder()
+                    .review(review)
+                    .user(user)
+                    .reactionType(type)
+                    .createdAt(LocalDateTime.now())
+                    .build());
+            resultType = type;
+        }
+
+        // SYNC TO FIREBASE
+        firebaseRealtimeService.pushReaction(reviewId, userId, resultType);
+
+        // NOTIFY the review author (only for new like/dislike, not for removal)
+        if (!"NONE".equals(resultType) && review.getUser() != null
+                && !userId.equals(review.getUser().getUsername())) {
+            String reactorName = user.getFullName() != null ? user.getFullName() : user.getUsername();
+            String reviewAuthor = review.getUser().getFullName();
+            String action = "LIKE".equals(resultType) ? "thích" : "không thích";
+            firebaseRealtimeService.pushNotification(
+                "Tương tác mới",
+                reactorName + " đã " + action + " đánh giá của " + reviewAuthor,
+                "REACTION");
+        }
+
+        long likeCount = reviewLikeRepository.countByReview_IdAndReactionType(reviewId, "LIKE");
+        long dislikeCount = reviewLikeRepository.countByReview_IdAndReactionType(reviewId, "DISLIKE");
+        return ResponseEntity.ok(ApiResponse.success(
+                java.util.Map.of("type", resultType, "likeCount", likeCount, "dislikeCount", dislikeCount),
+                "Reaction toggled"));
+    }
+
+    @DeleteMapping("/reviews/{reviewId}/replies/{replyId}")
+    public ResponseEntity<ApiResponse<Void>> deleteReply(
+            @PathVariable Long reviewId,
+            @PathVariable Long replyId,
+            @RequestParam String userId) {
+        com.vn.huit.travelApp.entity.Reply reply = replyRepository.findById(replyId).orElse(null);
+        if (reply == null || !reply.getReview().getId().equals(reviewId)) {
+            return ResponseEntity.status(404).body(ApiResponse.error("Reply not found"));
+        }
+        // Only the author can delete
+        if (!reply.getUser().getUsername().equals(userId)) {
+            return ResponseEntity.status(403).body(ApiResponse.error("Not authorized to delete this reply"));
+        }
+        replyRepository.delete(reply);
+
+        // SYNC TO FIREBASE
+        firebaseRealtimeService.removeReply(reviewId, replyId);
+
+        return ResponseEntity.ok(ApiResponse.success(null, "Reply deleted"));
     }
 
     private void recalculateDestinationRating(Long destinationId) {
