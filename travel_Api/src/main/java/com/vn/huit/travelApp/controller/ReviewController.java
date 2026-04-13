@@ -95,7 +95,8 @@ public class ReviewController {
         firebaseRealtimeService.pushNotification(
             "Đánh giá mới",
             authorName + " đã đánh giá " + destination.getTitle(),
-            "REVIEW");
+            "REVIEW",
+            user.getUsername());
 
         return ResponseEntity.ok(ApiResponse.success(dto, "Review added"));
     }
@@ -193,7 +194,8 @@ public class ReviewController {
             firebaseRealtimeService.pushNotification(
                 "Phản hồi mới",
                 replyAuthor + " đã phản hồi đánh giá của " + reviewAuthor,
-                "REPLY");
+                "REPLY",
+                user.getUsername());
         }
 
         return ResponseEntity.ok(ApiResponse.success(firebaseData, "Reply added"));
@@ -246,7 +248,8 @@ public class ReviewController {
             firebaseRealtimeService.pushNotification(
                 "Tương tác mới",
                 reactorName + " đã " + action + " đánh giá của " + reviewAuthor,
-                "REACTION");
+                "REACTION",
+                userId);
         }
 
         long likeCount = reviewLikeRepository.countByReview_IdAndReactionType(reviewId, "LIKE");

@@ -42,13 +42,14 @@ public class FirebaseRealtimeService {
         }
     }
 
-    public void pushNotification(String title, String message, String type) {
+    public void pushNotification(String title, String message, String type, String userId) {
         DatabaseReference notifRef = getRootRef().child("notifications").push();
         Map<String, Object> notifData = Map.of(
                 "id", notifRef.getKey(),
                 "title", title,
                 "message", message,
                 "type", type,
+                "userId", userId != null ? userId : "",
                 "createdAt", System.currentTimeMillis()
         );
         notifRef.setValueAsync(notifData);
@@ -66,5 +67,12 @@ public class FirebaseRealtimeService {
                 .child(reviewId.toString())
                 .child(replyId.toString())
                 .removeValueAsync();
+    }
+
+    public void clearAll() {
+        getRootRef().child("reviews_realtime").removeValueAsync();
+        getRootRef().child("replies").removeValueAsync();
+        getRootRef().child("review_likes").removeValueAsync();
+        getRootRef().child("notifications").removeValueAsync();
     }
 }

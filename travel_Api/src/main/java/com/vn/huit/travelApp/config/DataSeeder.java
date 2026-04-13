@@ -10,7 +10,6 @@ import com.vn.huit.travelApp.repository.DestinationRepository;
 import com.vn.huit.travelApp.repository.FavoriteRepository;
 import com.vn.huit.travelApp.repository.ReviewRepository;
 import com.vn.huit.travelApp.repository.UserRepository;
-import lombok.RequiredArgsConstructor;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -23,7 +22,6 @@ import java.util.Map;
 import java.util.Random;
 
 @Configuration
-@RequiredArgsConstructor
 public class DataSeeder {
 
     private final CategoryRepository categoryRepository;
@@ -31,10 +29,28 @@ public class DataSeeder {
     private final ReviewRepository reviewRepository;
     private final UserRepository userRepository;
     private final FavoriteRepository favoriteRepository;
+    private final com.vn.huit.travelApp.service.FirebaseRealtimeService firebaseRealtimeService;
+
+    public DataSeeder(CategoryRepository categoryRepository,
+                      DestinationRepository destinationRepository,
+                      ReviewRepository reviewRepository,
+                      UserRepository userRepository,
+                      FavoriteRepository favoriteRepository,
+                      com.vn.huit.travelApp.service.FirebaseRealtimeService firebaseRealtimeService) {
+        this.categoryRepository = categoryRepository;
+        this.destinationRepository = destinationRepository;
+        this.reviewRepository = reviewRepository;
+        this.userRepository = userRepository;
+        this.favoriteRepository = favoriteRepository;
+        this.firebaseRealtimeService = firebaseRealtimeService;
+    }
 
     @Bean
     public CommandLineRunner initData() {
         return args -> {
+            if (categoryRepository.count() == 0) {
+                firebaseRealtimeService.clearAll();
+            }
             Map<String, Category> categories = ensureCategories();
             List<Destination> destinations = ensureDestinations(categories);
             List<User> users = ensureUsers();
