@@ -6,6 +6,7 @@ import '../edit_profile_screen.dart';
 import '../../../core/data/api_service.dart';
 import '../../../core/data/destination_model.dart';
 import '../../../core/data/review_model.dart';
+import '../../auth/login_screen.dart';
 import '../../place_detail/place_detail_screen.dart';
 import '../../place_detail/presentation/reviews_screen.dart';
 
@@ -24,10 +25,12 @@ class ProfileScreenState extends State<ProfileScreen>
   String _displayName = '';
   String _email = '';
   String? _photoUrl;
+  String? _currentUid;
 
   final ApiService _api = ApiService();
   List<DestinationModel> _savedPlaces = [];
   List<ReviewModel> _userReviews = [];
+  bool _isCheckingAuth = true;
   bool _isLoadingSaved = true;
   bool _isLoadingReviews = true;
 
@@ -39,6 +42,13 @@ class ProfileScreenState extends State<ProfileScreen>
   }
 
   Future<void> _loadUserInfo() async {
+    if (mounted) {
+      setState(() {
+        _isCheckingAuth = true;
+        _isLoadingSaved = true;
+        _isLoadingReviews = true;
+      });
+    }
     String? currentUid;
     // Ưu tiên lấy từ Firebase Auth (luôn mới nhất)
     final firebaseUser = _authService.currentUser;
@@ -63,12 +73,30 @@ class ProfileScreenState extends State<ProfileScreen>
     }
 
     if (currentUid != null) {
+      if (mounted) {
+        setState(() {
+          _currentUid = currentUid;
+          _isCheckingAuth = false;
+        });
+      }
       // Lấy avatar từ Backend DB (đã được cập nhật sau khi edit profile)
       _fetchUserProfile(currentUid);
       _fetchSavedPlaces(currentUid);
       _fetchUserReviews(currentUid);
     } else {
-      if (mounted) setState(() { _isLoadingSaved = false; _isLoadingReviews = false; });
+      if (mounted) {
+        setState(() {
+          _currentUid = null;
+          _displayName = '';
+          _email = '';
+          _photoUrl = null;
+          _savedPlaces = [];
+          _userReviews = [];
+          _isCheckingAuth = false;
+          _isLoadingSaved = false;
+          _isLoadingReviews = false;
+        });
+      }
     }
   }
 
@@ -77,17 +105,19 @@ class ProfileScreenState extends State<ProfileScreen>
       final profile = await _api.getUserProfile(uid);
       if (profile.isNotEmpty && mounted) {
         String? avatarUrl;
-        if (profile['avatarUrl'] != null && profile['avatarUrl'].toString().isNotEmpty) {
+        if (profile['avatarUrl'] != null &&
+            profile['avatarUrl'].toString().isNotEmpty) {
           avatarUrl = profile['avatarUrl'];
           if (avatarUrl != null && avatarUrl.startsWith('/uploads')) {
             avatarUrl = 'http://10.0.2.2:8080$avatarUrl';
           }
         }
         setState(() {
-          if (profile['fullName'] != null && profile['fullName'].toString().isNotEmpty) {
+          if (profile['fullName'] != null &&
+              profile['fullName'].toString().isNotEmpty) {
             _displayName = profile['fullName'];
           }
-          if (avatarUrl != null && avatarUrl!.isNotEmpty) {
+          if (avatarUrl != null && avatarUrl.isNotEmpty) {
             _photoUrl = avatarUrl;
           }
         });
@@ -99,7 +129,10 @@ class ProfileScreenState extends State<ProfileScreen>
     try {
       final favIds = await _api.getFavoriteIds(uid);
       if (favIds.isEmpty && mounted) {
-        setState(() { _savedPlaces = []; _isLoadingSaved = false; });
+        setState(() {
+          _savedPlaces = [];
+          _isLoadingSaved = false;
+        });
         return;
       }
       final allDests = await _api.getAll();
@@ -137,6 +170,8 @@ class ProfileScreenState extends State<ProfileScreen>
 
   @override
   Widget build(BuildContext context) {
+    final isSignedIn = _currentUid != null && _currentUid!.isNotEmpty;
+
     return Scaffold(
       backgroundColor: AppColors.scaffoldBg,
       appBar: AppBar(
@@ -153,37 +188,128 @@ class ProfileScreenState extends State<ProfileScreen>
           ),
         ),
         actions: [
-          IconButton(
-            icon: const Icon(
-              Icons.settings_outlined,
-              color: AppColors.textPrimary,
+          if (isSignedIn)
+            IconButton(
+              icon: const Icon(
+                Icons.settings_outlined,
+                color: AppColors.textPrimary,
+              ),
+              onPressed: () async {
+                await Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const SettingsScreen()),
+                );
+                // Reload user info in case it changed (e.g. logged out)
+                _loadUserInfo();
+              },
             ),
-            onPressed: () async {
-              await Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const SettingsScreen()),
-              );
-              // Reload user info in case it changed (e.g. logged out)
-              _loadUserInfo();
-            },
-          ),
         ],
       ),
-      body: DefaultTabController(
-        length: 2,
-        child: Column(
-          children: [
-            const SizedBox(height: 16),
-            buildProfileHeader(context),
-            const SizedBox(height: 20),
-            buildTabs(),
-            Expanded(
-              child: TabBarView(
-                controller: tabController,
-                children: [buildSavedPlacesTab(), buildMyReviewsTab()],
+      body: _isCheckingAuth
+          ? const Center(child: CircularProgressIndicator())
+          : isSignedIn
+          ? DefaultTabController(
+              length: 2,
+              child: Column(
+                children: [
+                  const SizedBox(height: 16),
+                  buildProfileHeader(context),
+                  const SizedBox(height: 20),
+                  buildTabs(),
+                  Expanded(
+                    child: TabBarView(
+                      controller: tabController,
+                      children: [buildSavedPlacesTab(), buildMyReviewsTab()],
+                    ),
+                  ),
+                ],
               ),
-            ),
-          ],
+            )
+          : buildGuestProfile(),
+    );
+  }
+
+  Widget buildGuestProfile() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 24),
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.fromLTRB(24, 28, 24, 28),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(20),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.06),
+                blurRadius: 18,
+                offset: const Offset(0, 8),
+              ),
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 76,
+                height: 76,
+                decoration: BoxDecoration(
+                  color: AppColors.primaryLight.withValues(alpha: 0.18),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.person_outline,
+                  size: 40,
+                  color: AppColors.primary,
+                ),
+              ),
+              const SizedBox(height: 18),
+              const Text(
+                'Khám phá không cần đăng nhập',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w800,
+                  color: AppColors.textPrimary,
+                ),
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                'Bạn vẫn có thể xem địa điểm, tìm kiếm và đọc thông tin du lịch. Đăng nhập khi muốn đánh giá, đồng bộ yêu thích hoặc chỉnh hồ sơ.',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 14,
+                  height: 1.5,
+                  color: AppColors.textSecondary,
+                ),
+              ),
+              const SizedBox(height: 22),
+              SizedBox(
+                width: double.infinity,
+                height: 48,
+                child: ElevatedButton.icon(
+                  onPressed: () async {
+                    await Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const LoginScreen()),
+                    );
+                    if (mounted) {
+                      _loadUserInfo();
+                    }
+                  },
+                  icon: const Icon(Icons.login, size: 20),
+                  label: const Text('Đăng nhập'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -283,9 +409,16 @@ class ProfileScreenState extends State<ProfileScreen>
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: const [
-            Icon(Icons.bookmark_border, size: 48, color: AppColors.textSecondary),
+            Icon(
+              Icons.bookmark_border,
+              size: 48,
+              color: AppColors.textSecondary,
+            ),
             SizedBox(height: 12),
-            Text('Bạn chưa lưu địa điểm nào.', style: TextStyle(color: AppColors.textSecondary)),
+            Text(
+              'Bạn chưa lưu địa điểm nào.',
+              style: TextStyle(color: AppColors.textSecondary),
+            ),
           ],
         ),
       );
@@ -306,7 +439,9 @@ class ProfileScreenState extends State<ProfileScreen>
             onTap: () {
               Navigator.push(
                 context,
-                MaterialPageRoute(builder: (_) => PlaceDetailScreen(destination: place)),
+                MaterialPageRoute(
+                  builder: (_) => PlaceDetailScreen(destination: place),
+                ),
               );
             },
             child: Column(
@@ -383,7 +518,8 @@ class ProfileScreenState extends State<ProfileScreen>
             await Navigator.push(
               context,
               MaterialPageRoute(
-                builder: (_) => ReviewsScreen(destinationId: review.destinationId),
+                builder: (_) =>
+                    ReviewsScreen(destinationId: review.destinationId),
               ),
             );
             // Reload reviews after returning
@@ -391,76 +527,81 @@ class ProfileScreenState extends State<ProfileScreen>
             if (uid != null) _fetchUserReviews(uid);
           },
           child: Card(
-          margin: const EdgeInsets.only(bottom: 16),
-          elevation: 2,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Container(
-                      width: 48,
-                      height: 48,
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(12),
-                        image: DecorationImage(
-                          image: NetworkImage(review.destinationImage ?? 'https://via.placeholder.com/150'),
-                          fit: BoxFit.cover,
+            margin: const EdgeInsets.only(bottom: 16),
+            elevation: 2,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        width: 48,
+                        height: 48,
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(12),
+                          image: DecorationImage(
+                            image: NetworkImage(
+                              review.destinationImage ??
+                                  'https://via.placeholder.com/150',
+                            ),
+                            fit: BoxFit.cover,
+                          ),
                         ),
                       ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            review.destinationName ?? 'Địa điểm',
-                            style: const TextStyle(
-                              fontSize: 15,
-                              fontWeight: FontWeight.w700,
-                              color: AppColors.textPrimary,
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              review.destinationName ?? 'Địa điểm',
+                              style: const TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w700,
+                                color: AppColors.textPrimary,
+                              ),
                             ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            _formatDate(review.createdAt),
-                            style: const TextStyle(
-                              fontSize: 12,
-                              color: AppColors.textSecondary,
+                            const SizedBox(height: 4),
+                            Text(
+                              _formatDate(review.createdAt),
+                              style: const TextStyle(
+                                fontSize: 12,
+                                color: AppColors.textSecondary,
+                              ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: List.generate(
+                      5,
+                      (idx) => Icon(
+                        idx < review.rating ? Icons.star : Icons.star_border,
+                        color: Colors.amber,
+                        size: 18,
                       ),
                     ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                Row(
-                  children: List.generate(
-                    5,
-                    (idx) => Icon(
-                      idx < review.rating ? Icons.star : Icons.star_border,
-                      color: Colors.amber,
-                      size: 18,
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    review.comment,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      height: 1.5,
+                      color: AppColors.textPrimary,
                     ),
                   ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  review.comment,
-                  style: const TextStyle(
-                    fontSize: 14,
-                    height: 1.5,
-                    color: AppColors.textPrimary,
-                  ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
           ),
         );
       },

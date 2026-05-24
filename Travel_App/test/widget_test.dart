@@ -8,15 +8,18 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:travel_app/features/auth/login_screen.dart';
+import 'package:travel_app/features/main_screen.dart';
 import 'package:travel_app/main.dart';
 
 void main() {
-  testWidgets('TravelApp loads login screen', (WidgetTester tester) async {
+  testWidgets('TravelApp opens main screen without login gate', (
+    WidgetTester tester,
+  ) async {
     await tester.pumpWidget(const TravelApp());
-    await tester.pumpAndSettle();
+    await tester.pump();
 
     expect(find.byType(MaterialApp), findsOneWidget);
-    expect(find.byType(LoginScreen), findsOneWidget);
+    expect(find.byType(MainScreen), findsOneWidget);
+    expect(find.text('Trang chủ'), findsOneWidget);
   });
 }
