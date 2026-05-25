@@ -4,7 +4,6 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/data/auth_service.dart';
 import '../main_screen.dart';
-import 'forgot_password_screen.dart';
 import 'sign_up_screen.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -89,7 +88,6 @@ class LoginScreenState extends State<LoginScreen> {
     }
   }
 
-
   Future<void> handleGoogleSignIn() async {
     setState(() => isGoogleLoading = true);
     try {
@@ -129,7 +127,6 @@ class LoginScreenState extends State<LoginScreen> {
       }
     }
   }
-
 
   void navigateToMain() {
     Navigator.pushAndRemoveUntil(
@@ -292,29 +289,29 @@ class LoginScreenState extends State<LoginScreen> {
               },
             ),
             const SizedBox(height: 8),
-            Align(
-              alignment: Alignment.centerRight,
-              child: TextButton(
-                onPressed: isBusy
-                    ? null
-                    : () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => const ForgotPasswordScreen(),
-                          ),
-                        );
-                      },
-                child: const Text(
-                  'Quên mật khẩu?',
-                  style: TextStyle(
-                    color: AppColors.primary,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(height: 8),
+            // Align(
+            //   alignment: Alignment.centerRight,
+            //   child: TextButton(
+            //     onPressed: isBusy
+            //         ? null
+            //         : () {
+            //             Navigator.push(
+            //               context,
+            //               MaterialPageRoute(
+            //                 builder: (_) => const ForgotPasswordScreen(),
+            //               ),
+            //             );
+            //           },
+            //     // child: const Text(
+            //     //   'Quên mật khẩu?',
+            //     //   style: TextStyle(
+            //     //     color: AppColors.primary,
+            //     //     fontWeight: FontWeight.w500,
+            //     //   ),
+            //     // ),
+            //   ),
+            // ),
+            // const SizedBox(height: 8),
             SizedBox(
               height: 50,
               child: ElevatedButton(
@@ -344,15 +341,15 @@ class LoginScreenState extends State<LoginScreen> {
                     isLoading: isGoogleLoading,
                   ),
                 ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: buildSocialButton(
-                    label: 'Facebook',
-                    iconPath: 'f',
-                    onTap: null,
-                    isLoading: false,
-                  ),
-                ),
+                // const SizedBox(width: 16),
+                // Expanded(
+                //   child: buildSocialButton(
+                //     label: 'Facebook',
+                //     iconPath: 'f',
+                //     onTap: null,
+                //     isLoading: false,
+                //   ),
+                // ),
               ],
             ),
             const SizedBox(height: 24),

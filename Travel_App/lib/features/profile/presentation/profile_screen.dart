@@ -5,7 +5,9 @@ import '../settings_screen.dart';
 import '../edit_profile_screen.dart';
 import '../../../core/data/api_service.dart';
 import '../../../core/data/destination_model.dart';
+import '../../../core/data/favorite_local_service.dart';
 import '../../../core/data/review_model.dart';
+import '../../../core/data/travel_repository.dart';
 import '../../auth/login_screen.dart';
 import '../../place_detail/place_detail_screen.dart';
 import '../../place_detail/presentation/reviews_screen.dart';
@@ -28,11 +30,15 @@ class ProfileScreenState extends State<ProfileScreen>
   String? _currentUid;
 
   final ApiService _api = ApiService();
+  final TravelRepository _repository = TravelRepository();
+  final FavoriteLocalService _favLocal = FavoriteLocalService();
   List<DestinationModel> _savedPlaces = [];
   List<ReviewModel> _userReviews = [];
   bool _isCheckingAuth = true;
   bool _isLoadingSaved = true;
   bool _isLoadingReviews = true;
+  bool _isSavedOffline = false;
+  String? _savedOfflineMessage;
 
   @override
   void initState() {
@@ -127,20 +133,31 @@ class ProfileScreenState extends State<ProfileScreen>
 
   Future<void> _fetchSavedPlaces(String uid) async {
     try {
-      final favIds = await _api.getFavoriteIds(uid);
+      List<int> favIds;
+      try {
+        favIds = await _api.getFavoriteIds(uid);
+        await _favLocal.applyRemoteFavorites(favIds);
+      } catch (_) {
+        favIds = await _favLocal.getAllFavoriteIds();
+      }
       if (favIds.isEmpty && mounted) {
         setState(() {
           _savedPlaces = [];
           _isLoadingSaved = false;
+          _isSavedOffline = false;
+          _savedOfflineMessage = null;
         });
         return;
       }
-      final allDests = await _api.getAll();
+      final result = await _repository.getAll();
+      final allDests = result.data;
       final favorites = allDests.where((e) => favIds.contains(e.id)).toList();
       if (mounted) {
         setState(() {
           _savedPlaces = favorites;
           _isLoadingSaved = false;
+          _isSavedOffline = result.isFromCache;
+          _savedOfflineMessage = result.message;
         });
       }
     } catch (e) {
@@ -423,55 +440,106 @@ class ProfileScreenState extends State<ProfileScreen>
         ),
       );
     }
-    return Padding(
-      padding: const EdgeInsets.all(20),
-      child: GridView.builder(
-        itemCount: _savedPlaces.length,
-        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: 3,
-          childAspectRatio: 0.78,
-          crossAxisSpacing: 12,
-          mainAxisSpacing: 12,
-        ),
-        itemBuilder: (context, index) {
-          final place = _savedPlaces[index];
-          return GestureDetector(
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => PlaceDetailScreen(destination: place),
-                ),
-              );
-            },
-            child: Column(
-              children: [
-                Expanded(
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(14),
-                    child: Image.network(
-                      place.imageUrl,
-                      fit: BoxFit.cover,
-                      width: double.infinity,
-                    ),
+    return Column(
+      children: [
+        if (_isSavedOffline) buildSavedOfflineBanner(),
+        Expanded(
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: GridView.builder(
+              itemCount: _savedPlaces.length,
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 3,
+                childAspectRatio: 0.78,
+                crossAxisSpacing: 12,
+                mainAxisSpacing: 12,
+              ),
+              itemBuilder: (context, index) {
+                final place = _savedPlaces[index];
+                return GestureDetector(
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => PlaceDetailScreen(destination: place),
+                      ),
+                    );
+                  },
+                  child: Column(
+                    children: [
+                      Expanded(
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(14),
+                          child: Image.network(
+                            place.imageUrl,
+                            fit: BoxFit.cover,
+                            width: double.infinity,
+                            errorBuilder: (context, error, stackTrace) =>
+                                Container(
+                                  color: AppColors.primaryLight.withValues(
+                                    alpha: 0.2,
+                                  ),
+                                  child: const Icon(
+                                    Icons.image,
+                                    color: AppColors.textSecondary,
+                                  ),
+                                ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        place.title,
+                        textAlign: TextAlign.center,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.textPrimary,
+                        ),
+                      ),
+                    ],
                   ),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  place.title,
-                  textAlign: TextAlign.center,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.textPrimary,
-                  ),
-                ),
-              ],
+                );
+              },
             ),
-          );
-        },
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget buildSavedOfflineBanner() {
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.fromLTRB(20, 14, 20, 0),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: AppColors.secondary.withValues(alpha: 0.16),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: AppColors.secondary.withValues(alpha: 0.35)),
+      ),
+      child: Row(
+        children: [
+          const Icon(
+            Icons.cloud_off_outlined,
+            size: 18,
+            color: AppColors.secondaryDark,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              _savedOfflineMessage ??
+                  '\u0110ang xem d\u1eef li\u1ec7u offline.',
+              style: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: AppColors.secondaryDark,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

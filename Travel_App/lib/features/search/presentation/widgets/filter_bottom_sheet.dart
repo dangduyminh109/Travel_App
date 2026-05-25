@@ -1,14 +1,23 @@
 import 'package:flutter/material.dart';
+
 import '../../../../core/constants/app_colors.dart';
 
 class FilterBottomSheet extends StatefulWidget {
-  final List<int> activeRatings;
-  final List<String> activeRegions;
+  final String? activeCity;
+  final String? activeDistrict;
+  final String? activePlaceType;
+  final String? activePriceLevel;
+  final double? activeMinRating;
+  final String activeSortBy;
 
   const FilterBottomSheet({
     super.key,
-    required this.activeRatings,
-    required this.activeRegions,
+    this.activeCity,
+    this.activeDistrict,
+    this.activePlaceType,
+    this.activePriceLevel,
+    this.activeMinRating,
+    required this.activeSortBy,
   });
 
   @override
@@ -16,88 +25,139 @@ class FilterBottomSheet extends StatefulWidget {
 }
 
 class _FilterBottomSheetState extends State<FilterBottomSheet> {
-  late bool star1;
-  late bool star2;
-  late bool star3;
-  late bool star4;
-  late bool star5;
+  String? city;
+  String? district;
+  String? placeType;
+  String? priceLevel;
+  double? minRating;
+  late String sortBy;
 
-  late Map<String, bool> regions;
+  static const _cities = [
+    _FilterOption('TP.HCM', 'TP.HCM'),
+    _FilterOption('Vũng Tàu', 'Vũng Tàu'),
+  ];
+
+  static const _districts = [
+    _FilterOption('Quận 1', 'Quận 1'),
+    _FilterOption('Quận 3', 'Quận 3'),
+    _FilterOption('Bình Thạnh', 'Bình Thạnh'),
+    _FilterOption('Thủ Đức', 'Thủ Đức'),
+    _FilterOption('Bãi Sau', 'Bãi Sau'),
+    _FilterOption('Bãi Trước', 'Bãi Trước'),
+    _FilterOption('Núi Nhỏ', 'Núi Nhỏ'),
+    _FilterOption('Núi Lớn', 'Núi Lớn'),
+  ];
+
+  static const _placeTypes = [
+    _FilterOption('Ăn uống', 'FOOD'),
+    _FilterOption('Vui chơi', 'ENTERTAINMENT'),
+    _FilterOption('Nghỉ ngơi', 'HOTEL'),
+    _FilterOption('Cafe/check-in', 'CAFE'),
+    _FilterOption('Văn hóa/lịch sử', 'CULTURE_HISTORY'),
+    _FilterOption('Mua sắm', 'SHOPPING'),
+  ];
+
+  static const _priceLevels = [
+    _FilterOption('Miễn phí', 'FREE'),
+    _FilterOption('Bình dân', 'BUDGET'),
+    _FilterOption('Tầm trung', 'MODERATE'),
+    _FilterOption('Cao cấp', 'PREMIUM'),
+    _FilterOption('Sang trọng', 'LUXURY'),
+  ];
+
+  static const _sortOptions = [
+    _FilterOption('Phù hợp nhất', 'relevance'),
+    _FilterOption('Đánh giá cao', 'rating'),
+    _FilterOption('Mới nhất', 'newest'),
+    _FilterOption('Giá thấp', 'price_asc'),
+    _FilterOption('Giá cao', 'price_desc'),
+    _FilterOption('Gần nhất', 'distance'),
+  ];
 
   @override
   void initState() {
     super.initState();
-    star1 = widget.activeRatings.contains(1);
-    star2 = widget.activeRatings.contains(2);
-    star3 = widget.activeRatings.contains(3);
-    star4 = widget.activeRatings.contains(4);
-    star5 = widget.activeRatings.contains(5);
-
-    regions = {
-      'Miền Bắc': widget.activeRegions.contains('Miền Bắc'),
-      'Miền Trung': widget.activeRegions.contains('Miền Trung'),
-      'Miền Nam': widget.activeRegions.contains('Miền Nam'),
-      'Miền Núi': widget.activeRegions.contains('Miền Núi'),
-    };
+    city = widget.activeCity;
+    district = widget.activeDistrict;
+    placeType = widget.activePlaceType;
+    priceLevel = widget.activePriceLevel;
+    minRating = widget.activeMinRating;
+    sortBy = widget.activeSortBy;
   }
 
   @override
   Widget build(BuildContext context) {
     return SafeArea(
-      child: Padding(
-        padding: EdgeInsets.only(
-          left: 20,
-          right: 20,
-          top: 16,
-          bottom: 16 + MediaQuery.of(context).viewInsets.bottom,
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            buildHeader(context),
-            const SizedBox(height: 16),
-            buildSectionTitle('Đánh giá'),
-            buildRatingOptions(),
-            const SizedBox(height: 20),
-            buildSectionTitle('Khu vực'),
-            buildRegionSection(),
-            const SizedBox(height: 24),
-            SizedBox(
-              width: double.infinity,
-              height: 52,
-              child: ElevatedButton(
-                onPressed: () => Navigator.pop(context, {
-                  'ratings': [
-                    if (star1) 1,
-                    if (star2) 2,
-                    if (star3) 3,
-                    if (star4) 4,
-                    if (star5) 5,
-                  ],
-                  'regions': Map<String, bool>.from(regions),
-                }),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.primary,
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  textStyle: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
+      child: FractionallySizedBox(
+        heightFactor: 0.88,
+        child: Padding(
+          padding: EdgeInsets.only(
+            left: 20,
+            right: 20,
+            top: 12,
+            bottom: 16 + MediaQuery.of(context).viewInsets.bottom,
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _buildHandle(),
+              _buildHeader(context),
+              const SizedBox(height: 12),
+              Expanded(
+                child: SingleChildScrollView(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _buildSection('Thành phố', _cities, city, (value) {
+                        setState(() => city = _toggle(city, value));
+                      }),
+                      _buildSection('Quận/khu vực', _districts, district, (
+                        value,
+                      ) {
+                        setState(() => district = _toggle(district, value));
+                      }),
+                      _buildSection('Loại địa điểm', _placeTypes, placeType, (
+                        value,
+                      ) {
+                        setState(() => placeType = _toggle(placeType, value));
+                      }),
+                      _buildSection('Giá tham khảo', _priceLevels, priceLevel, (
+                        value,
+                      ) {
+                        setState(() => priceLevel = _toggle(priceLevel, value));
+                      }),
+                      _buildRatingSection(),
+                      _buildSection('Sắp xếp', _sortOptions, sortBy, (value) {
+                        setState(() => sortBy = value);
+                      }),
+                    ],
                   ),
                 ),
-                child: const Text('Áp dụng'),
               ),
-            ),
-          ],
+              const SizedBox(height: 12),
+              _buildActions(context),
+            ],
+          ),
         ),
       ),
     );
   }
 
-  Widget buildHeader(BuildContext context) {
+  Widget _buildHandle() {
+    return Center(
+      child: Container(
+        width: 44,
+        height: 4,
+        margin: const EdgeInsets.only(bottom: 12),
+        decoration: BoxDecoration(
+          color: AppColors.divider.withValues(alpha: 0.8),
+          borderRadius: BorderRadius.circular(99),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHeader(BuildContext context) {
     return Row(
       children: [
         const Expanded(
@@ -105,7 +165,7 @@ class _FilterBottomSheetState extends State<FilterBottomSheet> {
             'Bộ lọc tìm kiếm',
             style: TextStyle(
               fontSize: 18,
-              fontWeight: FontWeight.w700,
+              fontWeight: FontWeight.w800,
               color: AppColors.textPrimary,
             ),
           ),
@@ -118,116 +178,176 @@ class _FilterBottomSheetState extends State<FilterBottomSheet> {
     );
   }
 
-  Widget buildSectionTitle(String title) {
-    return Text(
-      title,
-      style: const TextStyle(
-        fontSize: 15,
-        fontWeight: FontWeight.w700,
-        color: AppColors.textPrimary,
-      ),
-    );
-  }
-
-  Widget buildRatingOptions() {
-    return Column(
-      children: [
-        ratingTile(
-          label: '1 sao',
-          value: star1,
-          stars: 1,
-          onChanged: (v) => setState(() => star1 = v ?? false),
-        ),
-        ratingTile(
-          label: '2 sao',
-          value: star2,
-          stars: 2,
-          onChanged: (v) => setState(() => star2 = v ?? false),
-        ),
-        ratingTile(
-          label: '3 sao',
-          value: star3,
-          stars: 3,
-          onChanged: (v) => setState(() => star3 = v ?? false),
-        ),
-        ratingTile(
-          label: '4 sao',
-          value: star4,
-          stars: 4,
-          onChanged: (v) => setState(() => star4 = v ?? false),
-        ),
-        ratingTile(
-          label: '5 sao',
-          value: star5,
-          stars: 5,
-          onChanged: (v) => setState(() => star5 = v ?? false),
-        ),
-      ],
-    );
-  }
-
-  Widget ratingTile({
-    required String label,
-    required bool value,
-    int? stars,
-    required ValueChanged<bool?> onChanged,
-  }) {
-    return CheckboxListTile(
-      contentPadding: EdgeInsets.zero,
-      value: value,
-      onChanged: onChanged,
-      activeColor: AppColors.primary,
-      controlAffinity: ListTileControlAffinity.leading,
-      title: Row(
+  Widget _buildSection(
+    String title,
+    List<_FilterOption> options,
+    String? selectedValue,
+    ValueChanged<String> onSelected,
+  ) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 18),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            label,
-            style: const TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w500,
-              color: AppColors.textPrimary,
-            ),
-          ),
-          if (stars != null) ...[
-            const SizedBox(width: 8),
-            Row(
-              children: List.generate(
-                stars,
-                (_) => const Icon(
-                  Icons.star,
-                  size: 16,
-                  color: Colors.amber,
+          _buildSectionTitle(title),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 10,
+            runSpacing: 8,
+            children: options.map((option) {
+              final selected = selectedValue == option.value;
+              return FilterChip(
+                label: Text(option.label),
+                selected: selected,
+                onSelected: (_) => onSelected(option.value),
+                selectedColor: AppColors.primary.withValues(alpha: 0.15),
+                checkmarkColor: AppColors.primary,
+                labelStyle: TextStyle(
+                  color: selected
+                      ? AppColors.primaryDark
+                      : AppColors.textSecondary,
+                  fontWeight: FontWeight.w700,
                 ),
-              ),
-            ),
-          ],
+                side: BorderSide(
+                  color: selected ? AppColors.primary : AppColors.divider,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(20),
+                ),
+              );
+            }).toList(),
+          ),
         ],
       ),
     );
   }
 
+  Widget _buildRatingSection() {
+    final ratings = [
+      _RatingOption('Từ 3+', 3),
+      _RatingOption('Từ 4+', 4),
+      _RatingOption('Từ 4.5+', 4.5),
+    ];
 
-
-  Widget buildRegionSection() {
-    return Wrap(
-      spacing: 12,
-      runSpacing: 8,
-      children: regions.entries.map((entry) {
-        return FilterChip(
-          label: Text(entry.key),
-          selected: entry.value,
-          onSelected: (selected) => setState(() => regions[entry.key] = selected),
-          selectedColor: AppColors.primary.withValues(alpha: 0.15),
-          checkmarkColor: AppColors.primary,
-          labelStyle: TextStyle(
-            color: entry.value ? AppColors.primaryDark : AppColors.textSecondary,
-            fontWeight: FontWeight.w600,
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 18),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildSectionTitle('Đánh giá'),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 10,
+            runSpacing: 8,
+            children: ratings.map((option) {
+              final selected = minRating == option.value;
+              return FilterChip(
+                label: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.star, size: 16, color: Colors.amber),
+                    const SizedBox(width: 4),
+                    Text(option.label),
+                  ],
+                ),
+                selected: selected,
+                onSelected: (_) {
+                  setState(() {
+                    minRating = selected ? null : option.value;
+                  });
+                },
+                selectedColor: AppColors.primary.withValues(alpha: 0.15),
+                checkmarkColor: AppColors.primary,
+                labelStyle: TextStyle(
+                  color: selected
+                      ? AppColors.primaryDark
+                      : AppColors.textSecondary,
+                  fontWeight: FontWeight.w700,
+                ),
+                side: BorderSide(
+                  color: selected ? AppColors.primary : AppColors.divider,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(20),
+                ),
+              );
+            }).toList(),
           ),
-          side: BorderSide(color: AppColors.divider.withValues(alpha: 0.8)),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        );
-      }).toList(),
+        ],
+      ),
     );
+  }
+
+  Widget _buildSectionTitle(String title) {
+    return Text(
+      title,
+      style: const TextStyle(
+        fontSize: 15,
+        fontWeight: FontWeight.w800,
+        color: AppColors.textPrimary,
+      ),
+    );
+  }
+
+  Widget _buildActions(BuildContext context) {
+    return Row(
+      children: [
+        Expanded(
+          child: OutlinedButton(
+            onPressed: () {
+              setState(() {
+                city = null;
+                district = null;
+                placeType = null;
+                priceLevel = null;
+                minRating = null;
+                sortBy = 'relevance';
+              });
+            },
+            child: const Text('Xóa lọc'),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: ElevatedButton(
+            onPressed: () => Navigator.pop(context, {
+              'city': city,
+              'district': district,
+              'placeType': placeType,
+              'priceLevel': priceLevel,
+              'minRating': minRating,
+              'sortBy': sortBy,
+            }),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.primary,
+              foregroundColor: Colors.white,
+              minimumSize: const Size.fromHeight(48),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(14),
+              ),
+            ),
+            child: const Text('Áp dụng'),
+          ),
+        ),
+      ],
+    );
+  }
+
+  String? _toggle(String? current, String value) {
+    return current == value ? null : value;
   }
 }
 
+class _FilterOption {
+  final String label;
+  final String value;
+
+  const _FilterOption(this.label, this.value);
+}
+
+class _RatingOption {
+  final String label;
+  final double value;
+
+  const _RatingOption(this.label, this.value);
+}

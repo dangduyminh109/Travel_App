@@ -26,7 +26,27 @@ public class Destination {
 
     private String region;
 
+    private String city;
 
+    private String district;
+
+    private String address;
+
+    private String placeType;
+
+    private String priceLevel;
+
+    private Long minPrice;
+
+    private Long maxPrice;
+
+    private String openingHours;
+
+    @Column(columnDefinition = "TEXT")
+    private String highlights;
+
+    @Column(columnDefinition = "TEXT")
+    private String suitableFor;
 
     private Double rating;
 

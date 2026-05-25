@@ -44,4 +44,13 @@ app.*.map.json
 /android/app/profile
 /android/app/release
 
+### Secrets ###
+lib/core/constants/api_keys.dart
+!lib/core/constants/api_keys.example.dart
+android/secrets.properties
+!android/secrets.example.properties
+android/app/google-services.json
+!android/app/google-services.example.json
+
+
 

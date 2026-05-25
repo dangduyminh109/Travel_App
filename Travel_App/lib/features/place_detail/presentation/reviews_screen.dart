@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'dart:async';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/data/api_service.dart';
@@ -70,11 +70,9 @@ class ReviewsScreenState extends State<ReviewsScreen> {
           photoUrl: user?.photoURL ?? (session?['photoUrl'] as String?),
         );
       } catch (e) {
-        debugPrint('=== SYNC USER ERROR: $e ===');
+        // Ignore backend sync errors; review actions will surface API errors later.
       }
     }
-
-    debugPrint('=== USER INIT: _userId=$_userId, name=$_currentUserName ===');
   }
 
   void _setupRealtimeListeners() {
@@ -124,6 +122,12 @@ class ReviewsScreenState extends State<ReviewsScreen> {
         _isLoading = false;
       });
       for (final review in data) {
+        _sync.seedReviewMeta(
+          reviewId: review.id,
+          likes: review.likeCount,
+          dislikes: review.dislikeCount,
+          replies: review.replies,
+        );
         _sync.listenToReviewMeta(review.id);
       }
     } catch (e) {
@@ -179,12 +183,24 @@ class ReviewsScreenState extends State<ReviewsScreen> {
     );
   }
 
+  void _showReviewNeedsNetwork() {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Đánh giá cần kết nối internet.'),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.scaffoldBg,
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: _openWriteReviewSheet,
+        onPressed: _error != null
+            ? _showReviewNeedsNetwork
+            : _openWriteReviewSheet,
         icon: const Icon(Icons.rate_review_outlined),
         label: const Text('Viết đánh giá'),
         backgroundColor: AppColors.primary,
@@ -417,10 +433,25 @@ class ReviewsScreenState extends State<ReviewsScreen> {
     );
   }
 
+  Map<String, int> _initialReactionCounts(ReviewModel review) {
+    final cached = _sync.getReactionsFor(review.id);
+    final cachedLikes = cached['likes'] ?? 0;
+    final cachedDislikes = cached['dislikes'] ?? 0;
+    if (cachedLikes > 0 || cachedDislikes > 0) {
+      return cached;
+    }
+    return {'likes': review.likeCount, 'dislikes': review.dislikeCount};
+  }
+
+  List<ReplyModel> _initialReplies(ReviewModel review) {
+    final cached = _sync.getRepliesFor(review.id);
+    return cached.isNotEmpty ? cached : review.replies;
+  }
+
   Widget _buildReactionsRow(ReviewModel review) {
     return StreamBuilder<MapEntry<int, Map<String, int>>>(
       stream: _sync.reactionsStream.where((e) => e.key == review.id),
-      initialData: MapEntry(review.id, _sync.getReactionsFor(review.id)),
+      initialData: MapEntry(review.id, _initialReactionCounts(review)),
       builder: (context, snapshot) {
         final counts = snapshot.data?.value ?? {'likes': 0, 'dislikes': 0};
         final likes = counts['likes'] ?? 0;
@@ -512,9 +543,27 @@ class ReviewsScreenState extends State<ReviewsScreen> {
   Future<void> _handleReaction(int reviewId, String type) async {
     if (!await _ensureUserId()) return;
     try {
-      await _api.toggleLike(reviewId, _userId!, type: type);
+      final result = await _api.toggleLike(reviewId, _userId!, type: type);
+      final likes = (result['likeCount'] as num?)?.toInt() ?? 0;
+      final dislikes = (result['dislikeCount'] as num?)?.toInt() ?? 0;
+      if (!mounted) return;
+      setState(() {
+        final index = _reviews.indexWhere((review) => review.id == reviewId);
+        if (index != -1) {
+          final review = _reviews[index];
+          _reviews[index] = review.copyWith(
+            likeCount: likes,
+            dislikeCount: dislikes,
+          );
+          _sync.seedReviewMeta(
+            reviewId: reviewId,
+            likes: likes,
+            dislikes: dislikes,
+            replies: review.replies,
+          );
+        }
+      });
     } catch (e) {
-      debugPrint('=== REACTION ERROR: $e ===');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Lỗi: $e'), backgroundColor: Colors.red),
@@ -526,7 +575,7 @@ class ReviewsScreenState extends State<ReviewsScreen> {
   Widget _buildRepliesList(ReviewModel review) {
     return StreamBuilder<MapEntry<int, List<ReplyModel>>>(
       stream: _sync.repliesStream.where((e) => e.key == review.id),
-      initialData: MapEntry(review.id, _sync.getRepliesFor(review.id)),
+      initialData: MapEntry(review.id, _initialReplies(review)),
       builder: (context, snapshot) {
         final replies = snapshot.data?.value ?? [];
         if (replies.isEmpty) return const SizedBox.shrink();
@@ -564,12 +613,32 @@ class ReviewsScreenState extends State<ReviewsScreen> {
                     ),
                   ),
                   if (isMyReply)
-                    InkWell(
-                      onTap: () => _handleDeleteReply(review.id, reply.id),
-                      child: const Padding(
-                        padding: EdgeInsets.all(4),
-                        child: Icon(Icons.close, size: 16, color: Colors.red),
-                      ),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        InkWell(
+                          onTap: () => _openEditReplySheet(review.id, reply),
+                          child: const Padding(
+                            padding: EdgeInsets.all(4),
+                            child: Icon(
+                              Icons.edit_outlined,
+                              size: 16,
+                              color: AppColors.primary,
+                            ),
+                          ),
+                        ),
+                        InkWell(
+                          onTap: () => _handleDeleteReply(review.id, reply.id),
+                          child: const Padding(
+                            padding: EdgeInsets.all(4),
+                            child: Icon(
+                              Icons.close,
+                              size: 16,
+                              color: Colors.red,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                 ],
               ),
@@ -580,7 +649,78 @@ class ReviewsScreenState extends State<ReviewsScreen> {
     );
   }
 
+  Future<void> _openEditReplySheet(int reviewId, ReplyModel reply) async {
+    if (!await _ensureUserId()) return;
+    if (!mounted) return;
+
+    final editController = TextEditingController(text: reply.content);
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => Padding(
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.of(ctx).viewInsets.bottom + 20,
+          left: 20,
+          right: 20,
+          top: 20,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: editController,
+              decoration: const InputDecoration(
+                hintText: 'Chỉnh sửa phản hồi...',
+                border: OutlineInputBorder(),
+              ),
+              autofocus: true,
+              maxLines: 3,
+              minLines: 1,
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: () async {
+                  final text = editController.text.trim();
+                  if (text.isEmpty || _userId == null) return;
+                  try {
+                    FocusScope.of(ctx).unfocus();
+                    await _api.updateReply(reviewId, reply.id, _userId!, text);
+                    if (ctx.mounted) Navigator.pop(ctx);
+                    await _loadReviews();
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Đã cập nhật phản hồi')),
+                      );
+                    }
+                  } catch (e) {
+                    if (ctx.mounted) {
+                      ScaffoldMessenger.of(ctx).showSnackBar(
+                        SnackBar(
+                          content: Text('Lỗi: $e'),
+                          backgroundColor: Colors.red,
+                        ),
+                      );
+                    }
+                  }
+                },
+                child: const Text('Lưu phản hồi'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Future<void> _handleDeleteReply(int reviewId, int replyId) async {
+    if (!await _ensureUserId()) return;
+    if (!mounted) return;
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -601,13 +741,13 @@ class ReviewsScreenState extends State<ReviewsScreen> {
     if (confirm != true || _userId == null) return;
     try {
       await _api.deleteReply(reviewId, replyId, _userId!);
+      await _loadReviews();
       if (mounted) {
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(const SnackBar(content: Text('Đã xóa phản hồi')));
       }
     } catch (e) {
-      debugPrint('=== DELETE REPLY ERROR: $e ===');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Lỗi: $e'), backgroundColor: Colors.red),
@@ -654,14 +794,11 @@ class ReviewsScreenState extends State<ReviewsScreen> {
                   final text = replyController.text.trim();
                   if (text.isEmpty) return;
                   try {
-                    debugPrint(
-                      '=== REPLY: reviewId=${review.id}, userId=$_userId ===',
-                    );
+                    FocusScope.of(ctx).unfocus();
                     await _api.addReply(review.id, _userId!, text);
-                    debugPrint('=== REPLY SUCCESS ===');
                     if (ctx.mounted) Navigator.pop(ctx);
+                    await _loadReviews();
                   } catch (e) {
-                    debugPrint('=== REPLY ERROR: $e ===');
                     if (ctx.mounted) {
                       ScaffoldMessenger.of(ctx).showSnackBar(
                         SnackBar(
@@ -917,7 +1054,6 @@ class ReviewsScreenState extends State<ReviewsScreen> {
       _commentController.clear();
       return true;
     } catch (e) {
-      debugPrint('=== REVIEW SUBMIT ERROR: $e ===');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(

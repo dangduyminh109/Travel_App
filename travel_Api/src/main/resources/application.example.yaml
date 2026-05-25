@@ -1,8 +1,6 @@
 debug: false
 
 spring:
-  config:
-    import: optional:file:src/main/resources/application-local.yaml
   application:
     name: travelApp
   servlet:
@@ -22,15 +20,9 @@ spring:
       hibernate:
         format_sql: false
 
-logging:
-  level:
-    root: INFO
-    org.springframework: INFO
-    org.hibernate.SQL: WARN
-
 firebase:
   service-account-path: ${FIREBASE_SERVICE_ACCOUNT_PATH:src/main/resources/serviceAccountKey.json}
-  database-url: ${FIREBASE_DATABASE_URL:}
+  database-url: ${FIREBASE_DATABASE_URL:PASTE_FIREBASE_REALTIME_DATABASE_URL}
 
 jwt:
   secret: ${JWT_SECRET:CHANGE_ME_FOR_LOCAL_DEVELOPMENT}

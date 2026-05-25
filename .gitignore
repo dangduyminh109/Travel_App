@@ -1,2 +1,43 @@
-travel_Api/src/main/resources/serviceAccountKey.json
+# OS / IDE
 .idea/
+.vscode/
+*.iml
+*.ipr
+*.iws
+.DS_Store
+Thumbs.db
+*.log
+
+# Local environment files
+.env
+.env.*
+!.env.example
+
+# Backend build/runtime
+travel_Api/target/
+travel_Api/uploads/
+travel_Api/src/main/resources/serviceAccountKey.json
+travel_Api/src/main/resources/application-local.yaml
+!travel_Api/src/main/resources/serviceAccountKey.example.json
+!travel_Api/src/main/resources/application.example.yaml
+
+# Flutter/Dart build/cache
+Travel_App/.dart_tool/
+Travel_App/.flutter-plugins-dependencies
+Travel_App/build/
+Travel_App/coverage/
+Travel_App/.pub-cache/
+Travel_App/.pub/
+
+# Android local build/cache/config
+Travel_App/android/.gradle/
+Travel_App/android/.kotlin/
+Travel_App/android/local.properties
+Travel_App/android/secrets.properties
+Travel_App/android/app/google-services.json
+!Travel_App/android/secrets.example.properties
+!Travel_App/android/app/google-services.example.json
+
+# Flutter app secrets
+Travel_App/lib/core/constants/api_keys.dart
+!Travel_App/lib/core/constants/api_keys.example.dart

@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
+
 import '../core/constants/app_colors.dart';
-import 'home/home_screen.dart';
-import 'search/search_explore_screen.dart';
-import 'profile/presentation/profile_screen.dart';
 import 'favorites/favorites_screen.dart';
+import 'home/home_screen.dart';
+import 'profile/presentation/profile_screen.dart';
+import 'search/search_explore_screen.dart';
 
 class MainScreen extends StatefulWidget {
   const MainScreen({super.key});
@@ -30,10 +31,7 @@ class MainScreenState extends State<MainScreen> {
         switchInCurve: Curves.easeInOut,
         switchOutCurve: Curves.easeInOut,
         transitionBuilder: (child, animation) {
-          return FadeTransition(
-            opacity: animation,
-            child: child,
-          );
+          return FadeTransition(opacity: animation, child: child);
         },
         child: KeyedSubtree(
           key: ValueKey<int>(currentIndex),

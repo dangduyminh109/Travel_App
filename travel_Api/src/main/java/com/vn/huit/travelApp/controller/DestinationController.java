@@ -4,10 +4,12 @@ import com.vn.huit.travelApp.dto.ApiResponse;
 import com.vn.huit.travelApp.dto.DestinationDto;
 import com.vn.huit.travelApp.entity.Destination;
 import com.vn.huit.travelApp.repository.DestinationRepository;
+import com.vn.huit.travelApp.service.DestinationSearchService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
 
@@ -17,6 +19,7 @@ import java.util.List;
 public class DestinationController {
 
     private final DestinationRepository destinationRepository;
+    private final DestinationSearchService destinationSearchService;
 
     @GetMapping
     public ResponseEntity<ApiResponse<List<DestinationDto>>> getAllDestinations() {
@@ -35,13 +38,38 @@ public class DestinationController {
     }
 
     @GetMapping("/search")
-    public ResponseEntity<ApiResponse<List<DestinationDto>>> search(@RequestParam("q") String query) {
-        List<DestinationDto> data = destinationRepository
-                .findByTitleContainingIgnoreCaseOrRegionContainingIgnoreCase(query, query)
-                .stream()
-                .map(this::toDto)
-                .toList();
-        return ResponseEntity.ok(ApiResponse.success(data, "Search results"));
+    public ResponseEntity<ApiResponse<List<DestinationDto>>> search(
+            @RequestParam(required = false) String q,
+            @RequestParam(required = false) String city,
+            @RequestParam(required = false) String district,
+            @RequestParam(required = false) String placeType,
+            @RequestParam(required = false) String priceLevel,
+            @RequestParam(required = false) String category,
+            @RequestParam(required = false) Double minRating,
+            @RequestParam(required = false) Long nearId,
+            @RequestParam(required = false) Double radiusKm,
+            @RequestParam(required = false) String sortBy) {
+        try {
+            List<DestinationDto> data = destinationSearchService.search(
+                            new DestinationSearchService.SearchCriteria(
+                                    q,
+                                    city,
+                                    district,
+                                    placeType,
+                                    priceLevel,
+                                    category,
+                                    minRating,
+                                    nearId,
+                                    radiusKm,
+                                    sortBy))
+                    .stream()
+                    .map(result -> toDto(result.destination(), result.distanceKm()))
+                    .toList();
+            return ResponseEntity.ok(ApiResponse.success(data, "Search results"));
+        } catch (ResponseStatusException e) {
+            return ResponseEntity.status(e.getStatusCode())
+                    .body(ApiResponse.error(e.getReason() == null ? "Search request is invalid" : e.getReason()));
+        }
     }
 
     @GetMapping("/latest")
@@ -66,6 +94,10 @@ public class DestinationController {
     }
 
     private DestinationDto toDto(Destination destination) {
+        return toDto(destination, null);
+    }
+
+    private DestinationDto toDto(Destination destination, Double distanceKm) {
         Long categoryId = null;
         String categoryName = null;
         if (destination.getCategory() != null) {
@@ -80,6 +112,16 @@ public class DestinationController {
                 .description(destination.getDescription())
                 .imageUrl(destination.getImageUrl())
                 .region(destination.getRegion())
+                .city(destination.getCity())
+                .district(destination.getDistrict())
+                .address(destination.getAddress())
+                .placeType(destination.getPlaceType())
+                .priceLevel(destination.getPriceLevel())
+                .minPrice(destination.getMinPrice())
+                .maxPrice(destination.getMaxPrice())
+                .openingHours(destination.getOpeningHours())
+                .highlights(destination.getHighlights())
+                .suitableFor(destination.getSuitableFor())
                 .rating(destination.getRating())
                 .reviewCount(destination.getReviewCount())
                 .categoryId(categoryId)
@@ -87,6 +129,7 @@ public class DestinationController {
                 .tags(destination.getTags())
                 .latitude(destination.getLatitude())
                 .longitude(destination.getLongitude())
+                .distanceKm(distanceKm)
                 .build();
     }
 }

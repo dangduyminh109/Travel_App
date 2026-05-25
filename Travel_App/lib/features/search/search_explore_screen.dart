@@ -1,19 +1,33 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+
 import '../../core/constants/app_config.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/data/api_service.dart';
 import '../../core/data/destination_model.dart';
 import '../../core/data/favorite_local_service.dart';
+import '../../core/data/travel_repository.dart';
 import '../place_detail/place_detail_screen.dart';
 import 'presentation/widgets/filter_bottom_sheet.dart';
 
 class SearchExploreScreen extends StatefulWidget {
   final String? initialCategory;
+  final String? initialCity;
+  final String? initialDistrict;
+  final String? initialPlaceType;
+  final String? initialKeyword;
+  final String? initialTitle;
   final bool showBackButton;
 
   const SearchExploreScreen({
-    super.key, 
-    this.initialCategory, 
+    super.key,
+    this.initialCategory,
+    this.initialCity,
+    this.initialDistrict,
+    this.initialPlaceType,
+    this.initialKeyword,
+    this.initialTitle,
     this.showBackButton = false,
   });
 
@@ -23,34 +37,98 @@ class SearchExploreScreen extends StatefulWidget {
 
 class SearchExploreScreenState extends State<SearchExploreScreen> {
   final _api = ApiService();
+  final _repository = TravelRepository();
   final _favLocal = FavoriteLocalService();
   final _userId = AppConfig.demoUserId;
   final searchController = TextEditingController();
 
-  int selectedChipIndex = 0;
-  List<DestinationModel> _allPlaces = [];
   List<DestinationModel> _places = [];
   Set<int> _localFavoriteIds = {};
   bool _isLoading = true;
+  bool _isOffline = false;
+  String? _offlineMessage;
   String? _error;
-  List<String> _filters = ['Tất cả'];
-  bool _isFirstLoad = true;
-  List<int> _activeRatingFilters = [];
-  List<String> _activeRegionFilters = [];
+  Timer? _searchDebounce;
+
+  String? _activeCategory;
+  String? _activeCity;
+  String? _activeDistrict;
+  String? _activePlaceType;
+  String? _activePriceLevel;
+  double? _activeMinRating;
+  int? _activeNearId;
+  double? _activeRadiusKm;
+  String _sortBy = 'relevance';
+
+  static const _quickFilters = [
+    _SearchQuickFilter(label: 'Tất cả'),
+    _SearchQuickFilter(label: 'TP.HCM', city: 'TP.HCM'),
+    _SearchQuickFilter(label: 'Vũng Tàu', city: 'Vũng Tàu'),
+    _SearchQuickFilter(label: 'Ăn uống', placeType: 'FOOD'),
+    _SearchQuickFilter(label: 'Vui chơi', placeType: 'ENTERTAINMENT'),
+    _SearchQuickFilter(label: 'Nghỉ ngơi', placeType: 'HOTEL'),
+    _SearchQuickFilter(label: 'Cafe/check-in', placeType: 'CAFE'),
+    _SearchQuickFilter(label: 'Văn hóa/lịch sử', placeType: 'CULTURE_HISTORY'),
+    _SearchQuickFilter(label: 'Mua sắm', placeType: 'SHOPPING'),
+  ];
+
+  static const _suggestions = [
+    _SearchSuggestion(
+      title: 'Khách sạn gần trung tâm',
+      subtitle: 'Quận 1, ưu tiên đánh giá cao',
+      icon: Icons.hotel,
+      city: 'TP.HCM',
+      district: 'Quận 1',
+      placeType: 'HOTEL',
+      sortBy: 'rating',
+    ),
+    _SearchSuggestion(
+      title: 'Ăn uống gần chỗ vui chơi',
+      subtitle: 'Quán ăn quanh phố đi bộ',
+      icon: Icons.restaurant,
+      placeType: 'FOOD',
+      nearAnchorTitle: 'Phố đi bộ Nguyễn Huệ',
+      radiusKm: 4,
+      sortBy: 'distance',
+    ),
+    _SearchSuggestion(
+      title: 'Địa điểm buổi tối',
+      subtitle: 'Đi dạo, chợ đêm, phố vui chơi',
+      icon: Icons.nights_stay,
+      keyword: 'buổi tối',
+      sortBy: 'rating',
+    ),
+    _SearchSuggestion(
+      title: 'Quán ăn đặc sản',
+      subtitle: 'Món địa phương dễ thử',
+      icon: Icons.local_dining,
+      keyword: 'đặc sản',
+      placeType: 'FOOD',
+      sortBy: 'rating',
+    ),
+  ];
 
   @override
   void initState() {
     super.initState();
-    _loadAll();
+    _activeCity = widget.initialCity;
+    _activeDistrict = widget.initialDistrict;
+    _activePlaceType = widget.initialPlaceType?.toUpperCase();
+    _applyInitialCategory(widget.initialCategory);
+    if (widget.initialKeyword != null && widget.initialKeyword!.isNotEmpty) {
+      searchController.text = widget.initialKeyword!;
+    }
+    _loadInitialData();
   }
 
   @override
   void dispose() {
+    _searchDebounce?.cancel();
     searchController.dispose();
     super.dispose();
   }
 
-  Future<void> _loadAll() async {
+  Future<void> _loadInitialData() async {
     setState(() {
       _isLoading = true;
       _error = null;
@@ -58,30 +136,12 @@ class SearchExploreScreenState extends State<SearchExploreScreen> {
     try {
       await _syncFavorites();
       final ids = await _favLocal.getAllFavoriteIds();
-      final categories = await _api.getCategories();
-      final filters = ['Tất cả', ...categories.map((c) => c.name)];
-      
-      int nextIndex = selectedChipIndex >= filters.length ? 0 : selectedChipIndex;
-      if (_isFirstLoad && widget.initialCategory != null) {
-        final foundStr = filters.indexOf(widget.initialCategory!);
-        if (foundStr != -1) {
-          nextIndex = foundStr;
-        }
-        _isFirstLoad = false;
-      }
-      
-      final allPlaces = await _api.getAll();
       if (!mounted) return;
-      
       setState(() {
         _localFavoriteIds = ids.toSet();
-        _allPlaces = allPlaces;
-        _filters = filters;
-        selectedChipIndex = nextIndex;
-        _isLoading = false;
       });
-      _applyFilters();
-    } catch (e) {
+      await _runSearch(showLoading: false);
+    } catch (_) {
       if (!mounted) return;
       setState(() {
         _error = 'Không thể tải dữ liệu. Kiểm tra kết nối mạng.';
@@ -90,40 +150,72 @@ class SearchExploreScreenState extends State<SearchExploreScreen> {
     }
   }
 
-  void _applyFilters() {
-    List<DestinationModel> temp = List.from(_allPlaces);
-    // Filter by Category
-    if (selectedChipIndex > 0 && selectedChipIndex < _filters.length) {
-      final selectedCat = _filters[selectedChipIndex];
-      temp = temp.where((p) => p.categoryName == selectedCat).toList();
-    }
-    // Filter by Ratings
-    if (_activeRatingFilters.isNotEmpty) {
-      temp = temp.where((p) {
-        if (_activeRatingFilters.contains(5) && p.rating == 5.0) return true;
-        if (_activeRatingFilters.contains(4) && p.rating >= 4.0 && p.rating < 5.0) return true;
-        if (_activeRatingFilters.contains(3) && p.rating >= 3.0 && p.rating < 4.0) return true;
-        if (_activeRatingFilters.contains(2) && p.rating >= 2.0 && p.rating < 3.0) return true;
-        if (_activeRatingFilters.contains(1) && p.rating >= 1.0 && p.rating < 2.0) return true;
-        return false;
-      }).toList();
-    }
-    // Filter by Regions
-    if (_activeRegionFilters.isNotEmpty) {
-      temp = temp.where((p) => _activeRegionFilters.contains(p.region)).toList();
-    }
-    // Search keyword
-    final kw = searchController.text.trim().toLowerCase();
-    if (kw.isNotEmpty) {
-      temp = temp.where((p) => 
-        p.title.toLowerCase().contains(kw) || 
-        p.region.toLowerCase().contains(kw)
-      ).toList();
+  Future<void> _runSearch({bool showLoading = true}) async {
+    if (showLoading) {
+      setState(() {
+        _isLoading = true;
+        _error = null;
+        _isOffline = false;
+        _offlineMessage = null;
+      });
     }
 
-    setState(() {
-      _places = temp;
+    try {
+      final result = await _repository.searchDestinations(
+        q: searchController.text.trim(),
+        city: _activeCity,
+        district: _activeDistrict,
+        placeType: _activePlaceType,
+        priceLevel: _activePriceLevel,
+        category: _activeCategory,
+        minRating: _activeMinRating,
+        nearId: _activeNearId,
+        radiusKm: _activeRadiusKm,
+        sortBy: _sortBy,
+      );
+      final places = result.data;
+      if (!mounted) return;
+      setState(() {
+        _places = places;
+        _isLoading = false;
+        _error = null;
+        _isOffline = result.isFromCache;
+        _offlineMessage = result.message;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _error = 'Không thể tìm kiếm. Kiểm tra bộ lọc hoặc kết nối mạng.';
+        _isLoading = false;
+      });
+    }
+  }
+
+  void _onSearchChanged(String value) {
+    _searchDebounce?.cancel();
+    _searchDebounce = Timer(const Duration(milliseconds: 300), () {
+      _runSearch();
     });
+  }
+
+  void _applyInitialCategory(String? categoryName) {
+    final filter = _quickFilterForLegacyCategory(categoryName);
+    if (filter != null) {
+      _activeCategory = null;
+      _activeCity ??= filter.city;
+      _activePlaceType ??= filter.placeType;
+      return;
+    }
+
+    final category = categoryName?.trim();
+    if (category?.toLowerCase() == 'thành phố') {
+      return;
+    }
+    if (category != null &&
+        category.isNotEmpty &&
+        category.toLowerCase() != 'tất cả') {
+      _activeCategory = category;
+    }
   }
 
   Future<void> _syncFavorites() async {
@@ -145,31 +237,6 @@ class SearchExploreScreenState extends State<SearchExploreScreen> {
       final remoteIds = await _api.getFavoriteIds(_userId);
       await _favLocal.applyRemoteFavorites(remoteIds);
     } catch (_) {}
-  }
-
-  Future<void> _search(String keyword) async {
-    if (keyword.trim().isEmpty) {
-      _loadAll();
-      return;
-    }
-    setState(() {
-      _isLoading = true;
-      selectedChipIndex = 0; // Tự động về "Tất cả" khi tìm kiếm từ khóa
-    });
-    try {
-      final places = await _api.search(keyword);
-      if (!mounted) return;
-      setState(() {
-        _places = places;
-        _isLoading = false;
-      });
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _error = 'Lỗi tìm kiếm.';
-        _isLoading = false;
-      });
-    }
   }
 
   Future<void> _toggleFavorite(DestinationModel dest) async {
@@ -199,6 +266,62 @@ class SearchExploreScreenState extends State<SearchExploreScreen> {
     } catch (_) {}
   }
 
+  Future<void> _applySuggestion(_SearchSuggestion suggestion) async {
+    int? nearId;
+    if (suggestion.nearAnchorTitle != null) {
+      nearId = await _resolveNearId(suggestion.nearAnchorTitle!);
+    }
+    if (!mounted) return;
+
+    setState(() {
+      searchController.text = suggestion.keyword ?? '';
+      _activeCategory = null;
+      _activeCity = suggestion.city;
+      _activeDistrict = suggestion.district;
+      _activePlaceType = suggestion.placeType;
+      _activePriceLevel = null;
+      _activeMinRating = null;
+      _activeNearId = nearId;
+      _activeRadiusKm = nearId == null ? null : suggestion.radiusKm;
+      _sortBy = nearId == null && suggestion.sortBy == 'distance'
+          ? 'relevance'
+          : suggestion.sortBy;
+    });
+    _runSearch();
+  }
+
+  Future<int?> _resolveNearId(String title) async {
+    try {
+      final result = await _repository.searchDestinations(
+        q: title,
+        sortBy: 'newest',
+      );
+      final results = result.data;
+      for (final place in results) {
+        if (place.title == title) return place.id;
+      }
+      return results.isEmpty ? null : results.first.id;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  void _clearAllFilters() {
+    setState(() {
+      searchController.clear();
+      _activeCategory = null;
+      _activeCity = null;
+      _activeDistrict = null;
+      _activePlaceType = null;
+      _activePriceLevel = null;
+      _activeMinRating = null;
+      _activeNearId = null;
+      _activeRadiusKm = null;
+      _sortBy = 'relevance';
+    });
+    _runSearch();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -209,7 +332,10 @@ class SearchExploreScreenState extends State<SearchExploreScreen> {
           children: [
             buildHeader(),
             buildSearchBar(),
-            buildFilterChips(),
+            buildSuggestionList(),
+            buildCategoryChips(),
+            buildActiveFilterChips(),
+            if (_isOffline) buildOfflineBanner(),
             Expanded(
               child: _isLoading
                   ? const Center(child: CircularProgressIndicator())
@@ -241,10 +367,10 @@ class SearchExploreScreenState extends State<SearchExploreScreen> {
                 onPressed: () => Navigator.pop(context),
               ),
             ),
-          const Expanded(
+          Expanded(
             child: Text(
-              'Tìm kiếm và Khám phá',
-              style: TextStyle(
+              widget.initialTitle ?? 'Tìm kiếm và Khám phá',
+              style: const TextStyle(
                 fontSize: 22,
                 fontWeight: FontWeight.bold,
                 color: AppColors.textPrimary,
@@ -277,9 +403,9 @@ class SearchExploreScreenState extends State<SearchExploreScreen> {
               ),
               child: TextField(
                 controller: searchController,
-                onChanged: _search,
+                onChanged: _onSearchChanged,
                 decoration: const InputDecoration(
-                  hintText: 'Tìm kiếm điểm đến...',
+                  hintText: 'Tìm khách sạn, quán ăn, điểm vui chơi...',
                   hintStyle: TextStyle(
                     fontSize: 14,
                     color: AppColors.textSecondary,
@@ -316,17 +442,30 @@ class SearchExploreScreenState extends State<SearchExploreScreen> {
                   borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
                 ),
                 builder: (_) => FilterBottomSheet(
-                  activeRatings: _activeRatingFilters,
-                  activeRegions: _activeRegionFilters,
+                  activeCity: _activeCity,
+                  activeDistrict: _activeDistrict,
+                  activePlaceType: _activePlaceType,
+                  activePriceLevel: _activePriceLevel,
+                  activeMinRating: _activeMinRating,
+                  activeSortBy: _sortBy,
                 ),
               );
               if (result != null && result is Map) {
                 setState(() {
-                  _activeRatingFilters = List<int>.from(result['ratings'] ?? []);
-                  final regMap = Map<String, bool>.from(result['regions'] ?? {});
-                  _activeRegionFilters = regMap.entries.where((e) => e.value).map((e) => e.key).toList();
+                  _activeCategory = null;
+                  _activeNearId = null;
+                  _activeRadiusKm = null;
+                  _activeCity = result['city'] as String?;
+                  _activeDistrict = result['district'] as String?;
+                  _activePlaceType = result['placeType'] as String?;
+                  _activePriceLevel = result['priceLevel'] as String?;
+                  _activeMinRating = result['minRating'] as double?;
+                  _sortBy = result['sortBy'] as String? ?? 'relevance';
+                  if (_sortBy == 'distance') {
+                    _sortBy = 'relevance';
+                  }
                 });
-                _applyFilters();
+                _runSearch();
               }
             },
             child: Container(
@@ -344,25 +483,84 @@ class SearchExploreScreenState extends State<SearchExploreScreen> {
     );
   }
 
-  Widget buildFilterChips() {
+  Widget buildSuggestionList() {
+    return SizedBox(
+      height: 78,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 20),
+        itemCount: _suggestions.length,
+        separatorBuilder: (context, index) => const SizedBox(width: 10),
+        itemBuilder: (_, i) => _buildSuggestionCard(_suggestions[i]),
+      ),
+    );
+  }
+
+  Widget _buildSuggestionCard(_SearchSuggestion suggestion) {
+    return InkWell(
+      onTap: () => _applySuggestion(suggestion),
+      borderRadius: BorderRadius.circular(8),
+      child: Container(
+        width: 190,
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: AppColors.divider.withValues(alpha: 0.35)),
+        ),
+        child: Row(
+          children: [
+            Icon(suggestion.icon, color: AppColors.secondaryDark, size: 24),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    suggestion.title,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w800,
+                      color: AppColors.textPrimary,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    suggestion.subtitle,
+                    style: const TextStyle(
+                      fontSize: 11,
+                      color: AppColors.textSecondary,
+                    ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget buildCategoryChips() {
     return SizedBox(
       height: 48,
       child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 20),
         child: Row(
-          children: List.generate(_filters.length, (i) {
-            final isSelected = i == selectedChipIndex;
+          children: _quickFilters.map((filter) {
+            final isSelected = _isQuickFilterSelected(filter);
             return Padding(
               padding: const EdgeInsets.only(right: 10),
               child: ChoiceChip(
-                label: Text(_filters[i]),
+                label: Text(filter.label),
                 selected: isSelected,
-                onSelected: (_) {
-                  setState(() => selectedChipIndex = i);
-                  searchController.clear();
-                  _applyFilters();
-                },
+                onSelected: (_) => _applyQuickFilter(filter),
                 selectedColor: AppColors.primary,
                 backgroundColor: Colors.white,
                 labelStyle: TextStyle(
@@ -383,10 +581,194 @@ class SearchExploreScreenState extends State<SearchExploreScreen> {
                 ),
               ),
             );
-          }),
+          }).toList(),
         ),
       ),
     );
+  }
+
+  bool _isQuickFilterSelected(_SearchQuickFilter filter) {
+    return _activeCategory == null &&
+        _activeCity == filter.city &&
+        _activePlaceType == filter.placeType &&
+        (filter.city != null || _activeDistrict == null) &&
+        (filter.city != null ||
+            filter.placeType != null ||
+            (_activeCity == null &&
+                _activeDistrict == null &&
+                _activePlaceType == null &&
+                _activeNearId == null));
+  }
+
+  void _applyQuickFilter(_SearchQuickFilter filter) {
+    setState(() {
+      _activeCategory = null;
+      _activeNearId = null;
+      _activeRadiusKm = null;
+      _activeCity = filter.city;
+      _activeDistrict = null;
+      _activePlaceType = filter.placeType;
+      if (_sortBy == 'distance') {
+        _sortBy = 'relevance';
+      }
+    });
+    _runSearch();
+  }
+
+  _SearchQuickFilter? _quickFilterForLegacyCategory(String? categoryName) {
+    final normalized = categoryName?.trim().toLowerCase();
+    return switch (normalized) {
+      'ẩm thực' || 'ăn uống' => _quickFilters.firstWhere(
+        (filter) => filter.placeType == 'FOOD',
+      ),
+      'giải trí' || 'vui chơi' => _quickFilters.firstWhere(
+        (filter) => filter.placeType == 'ENTERTAINMENT',
+      ),
+      'nghỉ ngơi' || 'khách sạn' || 'nghỉ dưỡng' => _quickFilters.firstWhere(
+        (filter) => filter.placeType == 'HOTEL',
+      ),
+      'cafe' || 'cafe/check-in' || 'cà phê' => _quickFilters.firstWhere(
+        (filter) => filter.placeType == 'CAFE',
+      ),
+      'văn hóa' || 'lịch sử' || 'văn hóa/lịch sử' => _quickFilters.firstWhere(
+        (filter) => filter.placeType == 'CULTURE_HISTORY',
+      ),
+      'mua sắm' => _quickFilters.firstWhere(
+        (filter) => filter.placeType == 'SHOPPING',
+      ),
+      'tp.hcm' || 'tphcm' || 'hồ chí minh' => _quickFilters.firstWhere(
+        (filter) => filter.city == 'TP.HCM',
+      ),
+      'vũng tàu' => _quickFilters.firstWhere(
+        (filter) => filter.city == 'Vũng Tàu',
+      ),
+      'thành phố' => null,
+      _ => null,
+    };
+  }
+
+  Widget buildActiveFilterChips() {
+    final chips = <_ActiveChip>[
+      if (_activeCity != null) _ActiveChip('TP: $_activeCity', _clearCity),
+      if (_activeDistrict != null)
+        _ActiveChip('Khu vực: $_activeDistrict', _clearDistrict),
+      if (_activePlaceType != null)
+        _ActiveChip(_placeTypeLabel(_activePlaceType!), _clearPlaceType),
+      if (_activePriceLevel != null)
+        _ActiveChip(_priceLevelLabel(_activePriceLevel!), _clearPriceLevel),
+      if (_activeMinRating != null)
+        _ActiveChip(
+          'Từ ${_activeMinRating!.toStringAsFixed(1)} sao',
+          _clearRating,
+        ),
+      if (_activeNearId != null)
+        _ActiveChip('Gần địa điểm đã chọn', _clearNearby),
+      if (_sortBy != 'relevance') _ActiveChip(_sortLabel(_sortBy), _clearSort),
+    ];
+
+    if (chips.isEmpty) return const SizedBox.shrink();
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 2, 20, 4),
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 6,
+        children: [
+          ...chips.map((chip) {
+            return InputChip(
+              label: Text(chip.label),
+              onDeleted: chip.onDeleted,
+              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              backgroundColor: AppColors.primaryLight.withValues(alpha: 0.12),
+              labelStyle: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                color: AppColors.primaryDark,
+              ),
+              deleteIconColor: AppColors.primaryDark,
+              side: BorderSide.none,
+            );
+          }),
+          TextButton(
+            onPressed: _clearAllFilters,
+            child: const Text('Xóa tất cả'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget buildOfflineBanner() {
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.fromLTRB(20, 2, 20, 6),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+      decoration: BoxDecoration(
+        color: AppColors.secondary.withValues(alpha: 0.16),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: AppColors.secondary.withValues(alpha: 0.35)),
+      ),
+      child: Row(
+        children: [
+          const Icon(
+            Icons.cloud_off_outlined,
+            size: 18,
+            color: AppColors.secondaryDark,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              _offlineMessage ??
+                  '\u0110ang t\u00ecm trong d\u1eef li\u1ec7u \u0111\u00e3 l\u01b0u.',
+              style: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: AppColors.secondaryDark,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _clearCity() {
+    setState(() => _activeCity = null);
+    _runSearch();
+  }
+
+  void _clearDistrict() {
+    setState(() => _activeDistrict = null);
+    _runSearch();
+  }
+
+  void _clearPlaceType() {
+    setState(() => _activePlaceType = null);
+    _runSearch();
+  }
+
+  void _clearPriceLevel() {
+    setState(() => _activePriceLevel = null);
+    _runSearch();
+  }
+
+  void _clearRating() {
+    setState(() => _activeMinRating = null);
+    _runSearch();
+  }
+
+  void _clearNearby() {
+    setState(() {
+      _activeNearId = null;
+      _activeRadiusKm = null;
+      if (_sortBy == 'distance') _sortBy = 'relevance';
+    });
+    _runSearch();
+  }
+
+  void _clearSort() {
+    setState(() => _sortBy = _activeNearId == null ? 'relevance' : 'distance');
+    _runSearch();
   }
 
   Widget buildPlaceList() {
@@ -400,6 +782,13 @@ class SearchExploreScreenState extends State<SearchExploreScreen> {
 
   Widget buildPlaceCard(DestinationModel dest) {
     final isFav = _localFavoriteIds.contains(dest.id);
+    final infoTags = [
+      dest.shortLocationText,
+      dest.placeTypeLabel.isNotEmpty ? dest.placeTypeLabel : dest.categoryName,
+      if (dest.priceRangeText.isNotEmpty) dest.priceRangeText,
+      if (dest.distanceText.isNotEmpty) 'Cách ${dest.distanceText}',
+    ].where((tag) => tag.isNotEmpty).toList();
+
     return GestureDetector(
       onTap: () async {
         await Navigator.push(
@@ -490,10 +879,18 @@ class SearchExploreScreenState extends State<SearchExploreScreen> {
                         ),
                       ),
                       const SizedBox(width: 8),
-                      const Icon(Icons.star, size: 16, color: Colors.amber),
+                      Icon(
+                        dest.hasReviews
+                            ? Icons.star
+                            : Icons.rate_review_outlined,
+                        size: 16,
+                        color: dest.hasReviews
+                            ? Colors.amber
+                            : AppColors.textSecondary,
+                      ),
                       const SizedBox(width: 3),
                       Text(
-                        dest.rating.toStringAsFixed(1),
+                        dest.hasReviews ? dest.ratingText : 'Chưa có',
                         style: const TextStyle(
                           fontSize: 13,
                           fontWeight: FontWeight.w700,
@@ -506,7 +903,7 @@ class SearchExploreScreenState extends State<SearchExploreScreen> {
                   Wrap(
                     spacing: 8,
                     runSpacing: 6,
-                    children: [dest.region, dest.categoryName].map((tag) {
+                    children: infoTags.map((tag) {
                       return Container(
                         padding: const EdgeInsets.symmetric(
                           horizontal: 10,
@@ -536,62 +933,131 @@ class SearchExploreScreenState extends State<SearchExploreScreen> {
     );
   }
 
-  Widget buildEmptyState() {
+  Widget buildErrorState() {
     return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(
-            Icons.search_off,
-            size: 64,
-            color: AppColors.textSecondary.withValues(alpha: 0.4),
-          ),
-          const SizedBox(height: 16),
-          const Text(
-            'Không tìm thấy kết quả',
-            style: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.w600,
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(
+              Icons.wifi_off_outlined,
+              size: 64,
               color: AppColors.textSecondary,
             ),
-          ),
-          const SizedBox(height: 8),
-          const Text(
-            'Thử tìm kiếm với từ khóa khác',
-            style: TextStyle(fontSize: 13, color: AppColors.textSecondary),
-          ),
-        ],
+            const SizedBox(height: 16),
+            Text(
+              _error!,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontSize: 15,
+                color: AppColors.textSecondary,
+              ),
+            ),
+            const SizedBox(height: 20),
+            ElevatedButton.icon(
+              onPressed: _loadInitialData,
+              icon: const Icon(Icons.refresh),
+              label: const Text('Thử lại'),
+            ),
+          ],
+        ),
       ),
     );
   }
 
-  Widget buildErrorState() {
+  Widget buildEmptyState() {
     return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          const Icon(
-            Icons.wifi_off_outlined,
-            size: 64,
-            color: AppColors.textSecondary,
-          ),
-          const SizedBox(height: 16),
-          Text(
-            _error!,
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-              fontSize: 15,
-              color: AppColors.textSecondary,
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.search_off, size: 64, color: AppColors.textSecondary),
+            const SizedBox(height: 16),
+            Text(
+              'Chưa tìm thấy địa điểm phù hợp.',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 15, color: AppColors.textSecondary),
             ),
-          ),
-          const SizedBox(height: 20),
-          ElevatedButton.icon(
-            onPressed: _loadAll,
-            icon: const Icon(Icons.refresh),
-            label: const Text('Thử lại'),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
+
+  String _placeTypeLabel(String value) {
+    return switch (value) {
+      'FOOD' => 'Ăn uống',
+      'ENTERTAINMENT' => 'Vui chơi',
+      'HOTEL' => 'Nghỉ ngơi',
+      'CAFE' => 'Cafe/check-in',
+      'CULTURE_HISTORY' => 'Văn hóa/lịch sử',
+      'SHOPPING' => 'Mua sắm',
+      _ => value,
+    };
+  }
+
+  String _priceLevelLabel(String value) {
+    return switch (value) {
+      'FREE' => 'Miễn phí',
+      'BUDGET' => 'Bình dân',
+      'MODERATE' => 'Tầm trung',
+      'PREMIUM' => 'Cao cấp',
+      'LUXURY' => 'Sang trọng',
+      _ => value,
+    };
+  }
+
+  String _sortLabel(String value) {
+    return switch (value) {
+      'rating' => 'Đánh giá cao',
+      'newest' => 'Mới nhất',
+      'price_asc' => 'Giá thấp',
+      'price_desc' => 'Giá cao',
+      'distance' => 'Gần nhất',
+      _ => 'Phù hợp nhất',
+    };
+  }
+}
+
+class _SearchSuggestion {
+  final String title;
+  final String subtitle;
+  final IconData icon;
+  final String? keyword;
+  final String? city;
+  final String? district;
+  final String? placeType;
+  final String? nearAnchorTitle;
+  final double? radiusKm;
+  final String sortBy;
+
+  const _SearchSuggestion({
+    required this.title,
+    required this.subtitle,
+    required this.icon,
+    this.keyword,
+    this.city,
+    this.district,
+    this.placeType,
+    this.nearAnchorTitle,
+    this.radiusKm,
+    required this.sortBy,
+  });
+}
+
+class _SearchQuickFilter {
+  final String label;
+  final String? city;
+  final String? placeType;
+
+  const _SearchQuickFilter({required this.label, this.city, this.placeType});
+}
+
+class _ActiveChip {
+  final String label;
+  final VoidCallback onDeleted;
+
+  const _ActiveChip(this.label, this.onDeleted);
 }

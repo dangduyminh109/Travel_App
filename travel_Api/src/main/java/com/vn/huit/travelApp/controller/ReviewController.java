@@ -1,6 +1,7 @@
 package com.vn.huit.travelApp.controller;
 
 import com.vn.huit.travelApp.dto.ApiResponse;
+import com.vn.huit.travelApp.dto.ReplyDto;
 import com.vn.huit.travelApp.dto.ReviewCreateRequest;
 import com.vn.huit.travelApp.dto.ReviewDto;
 import com.vn.huit.travelApp.entity.Destination;
@@ -169,10 +170,13 @@ public class ReviewController {
         if (user == null) {
             return ResponseEntity.status(404).body(ApiResponse.error("User not found"));
         }
+        if (request.getComment() == null || request.getComment().trim().isEmpty()) {
+            return ResponseEntity.badRequest().body(ApiResponse.error("Reply content is required"));
+        }
 
         com.vn.huit.travelApp.entity.Reply reply = com.vn.huit.travelApp.entity.Reply.builder()
                 .user(user)
-                .content(request.getComment()) // Reuse comment field as content
+                .content(request.getComment().trim()) // Reuse comment field as content
                 .createdAt(LocalDateTime.now())
                 .review(review)
                 .build();
@@ -182,23 +186,54 @@ public class ReviewController {
         java.util.Map<String, Object> firebaseData = new java.util.HashMap<>();
         firebaseData.put("id", saved.getId());
         firebaseData.put("userId", user.getUsername());
-        firebaseData.put("authorName", user.getFullName());
+        firebaseData.put("authorName", displayName(user));
         firebaseData.put("content", saved.getContent());
         firebaseData.put("createdAt", saved.getCreatedAt().toString());
         firebaseRealtimeService.pushReply(reviewId, firebaseData);
 
         // NOTIFY the review author
-        String reviewAuthor = review.getUser() != null ? review.getUser().getFullName() : "";
-        String replyAuthor = user.getFullName() != null ? user.getFullName() : user.getUsername();
-        if (!user.getUsername().equals(review.getUser().getUsername())) {
+        String reviewAuthor = review.getUser() != null ? displayName(review.getUser()) : "";
+        String replyAuthor = displayName(user);
+        if (review.getUser() != null && !user.getUsername().equals(review.getUser().getUsername())) {
             firebaseRealtimeService.pushNotification(
                 "Phản hồi mới",
                 replyAuthor + " đã phản hồi đánh giá của " + reviewAuthor,
                 "REPLY",
-                user.getUsername());
+                review.getUser().getUsername());
         }
 
         return ResponseEntity.ok(ApiResponse.success(firebaseData, "Reply added"));
+    }
+
+    @PutMapping("/reviews/{reviewId}/replies/{replyId}")
+    public ResponseEntity<ApiResponse<java.util.Map<String, Object>>> updateReply(
+            @PathVariable Long reviewId,
+            @PathVariable Long replyId,
+            @RequestParam String userId,
+            @RequestBody ReviewCreateRequest request) {
+        com.vn.huit.travelApp.entity.Reply reply = replyRepository.findById(replyId).orElse(null);
+        if (reply == null || !reply.getReview().getId().equals(reviewId)) {
+            return ResponseEntity.status(404).body(ApiResponse.error("Reply not found"));
+        }
+        if (!reply.getUser().getUsername().equals(userId)) {
+            return ResponseEntity.status(403).body(ApiResponse.error("Not authorized to update this reply"));
+        }
+        if (request.getComment() == null || request.getComment().trim().isEmpty()) {
+            return ResponseEntity.badRequest().body(ApiResponse.error("Reply content is required"));
+        }
+
+        reply.setContent(request.getComment().trim());
+        com.vn.huit.travelApp.entity.Reply saved = replyRepository.save(reply);
+
+        java.util.Map<String, Object> firebaseData = new java.util.HashMap<>();
+        firebaseData.put("id", saved.getId());
+        firebaseData.put("userId", saved.getUser().getUsername());
+        firebaseData.put("authorName", displayName(saved.getUser()));
+        firebaseData.put("content", saved.getContent());
+        firebaseData.put("createdAt", saved.getCreatedAt().toString());
+        firebaseRealtimeService.pushReply(reviewId, firebaseData);
+
+        return ResponseEntity.ok(ApiResponse.success(firebaseData, "Reply updated"));
     }
 
     @PostMapping("/reviews/{reviewId}/like")
@@ -242,14 +277,14 @@ public class ReviewController {
         // NOTIFY the review author (only for new like/dislike, not for removal)
         if (!"NONE".equals(resultType) && review.getUser() != null
                 && !userId.equals(review.getUser().getUsername())) {
-            String reactorName = user.getFullName() != null ? user.getFullName() : user.getUsername();
-            String reviewAuthor = review.getUser().getFullName();
+            String reactorName = displayName(user);
+            String reviewAuthor = displayName(review.getUser());
             String action = "LIKE".equals(resultType) ? "thích" : "không thích";
             firebaseRealtimeService.pushNotification(
                 "Tương tác mới",
                 reactorName + " đã " + action + " đánh giá của " + reviewAuthor,
                 "REACTION",
-                userId);
+                review.getUser().getUsername());
         }
 
         long likeCount = reviewLikeRepository.countByReview_IdAndReactionType(reviewId, "LIKE");
@@ -303,12 +338,13 @@ public class ReviewController {
         String authorName = "Ẩn danh";
         String avatarUrl = null;
         if (review.getUser() != null) {
-             authorName = review.getUser().getFullName();
-             if (authorName == null || authorName.isEmpty()) {
-                 authorName = review.getUser().getUsername(); // Fallback
-             }
+             authorName = displayName(review.getUser());
              avatarUrl = review.getUser().getAvatarUrl();
         }
+        List<ReplyDto> replies = replyRepository.findByReview_IdOrderByCreatedAtAsc(review.getId())
+                .stream()
+                .map(this::toReplyDto)
+                .toList();
         return ReviewDto.builder()
                 .id(review.getId())
                 .destinationId(review.getDestination().getId())
@@ -319,6 +355,29 @@ public class ReviewController {
                 .rating(review.getRating())
                 .comment(review.getComment())
                 .createdAt(review.getCreatedAt().toString())
+                .likeCount(reviewLikeRepository.countByReview_IdAndReactionType(review.getId(), "LIKE"))
+                .dislikeCount(reviewLikeRepository.countByReview_IdAndReactionType(review.getId(), "DISLIKE"))
+                .replies(replies)
                 .build();
+    }
+
+    private ReplyDto toReplyDto(com.vn.huit.travelApp.entity.Reply reply) {
+        User user = reply.getUser();
+        return ReplyDto.builder()
+                .id(reply.getId())
+                .userId(user != null ? user.getUsername() : "")
+                .authorName(user != null ? displayName(user) : "Ẩn danh")
+                .content(reply.getContent())
+                .createdAt(reply.getCreatedAt().toString())
+                .build();
+    }
+
+    private String displayName(User user) {
+        if (user == null) return "Ẩn danh";
+        String name = user.getFullName();
+        if (name == null || name.isBlank()) {
+            return user.getUsername();
+        }
+        return name;
     }
 }

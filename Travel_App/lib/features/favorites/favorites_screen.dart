@@ -1,9 +1,10 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/data/auth_service.dart';
 import '../../core/data/api_service.dart';
 import '../../core/data/destination_model.dart';
 import '../../core/data/favorite_local_service.dart';
+import '../../core/data/travel_repository.dart';
 import '../place_detail/place_detail_screen.dart';
 
 class FavoritesScreen extends StatefulWidget {
@@ -16,6 +17,7 @@ class FavoritesScreen extends StatefulWidget {
 class FavoritesScreenState extends State<FavoritesScreen>
     with SingleTickerProviderStateMixin {
   final _api = ApiService();
+  final _repository = TravelRepository();
   final _favLocal = FavoriteLocalService();
   final _authService = AuthService();
   String? _userId;
@@ -23,6 +25,8 @@ class FavoritesScreenState extends State<FavoritesScreen>
 
   List<DestinationModel> _places = [];
   bool _isLoading = true;
+  bool _isOffline = false;
+  String? _offlineMessage;
   String? _error;
 
   static const List<String> tabs = [
@@ -76,6 +80,8 @@ class FavoritesScreenState extends State<FavoritesScreen>
     setState(() {
       _isLoading = true;
       _error = null;
+      _isOffline = false;
+      _offlineMessage = null;
     });
     try {
       await _syncFavorites();
@@ -88,12 +94,15 @@ class FavoritesScreenState extends State<FavoritesScreen>
         });
         return;
       }
-      final all = await _api.getAll();
+      final result = await _repository.getAll();
+      final all = result.data;
       final favorites = all.where((d) => ids.contains(d.id)).toList();
       if (!mounted) return;
       setState(() {
         _places = favorites;
         _isLoading = false;
+        _isOffline = result.isFromCache;
+        _offlineMessage = result.message;
       });
     } catch (e) {
       if (!mounted) return;
@@ -244,8 +253,44 @@ class FavoritesScreenState extends State<FavoritesScreen>
       onRefresh: _loadFavorites,
       child: ListView.builder(
         padding: const EdgeInsets.all(16),
-        itemCount: _places.length,
-        itemBuilder: (context, index) => buildPlaceCard(_places[index]),
+        itemCount: _places.length + (_isOffline ? 1 : 0),
+        itemBuilder: (context, index) {
+          if (_isOffline && index == 0) return buildOfflineBanner();
+          final placeIndex = _isOffline ? index - 1 : index;
+          return buildPlaceCard(_places[placeIndex]);
+        },
+      ),
+    );
+  }
+
+  Widget buildOfflineBanner() {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: AppColors.secondary.withValues(alpha: 0.16),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: AppColors.secondary.withValues(alpha: 0.35)),
+      ),
+      child: Row(
+        children: [
+          const Icon(
+            Icons.cloud_off_outlined,
+            size: 18,
+            color: AppColors.secondaryDark,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              _offlineMessage ?? '\u0110ang xem d\u1eef li\u1ec7u offline.',
+              style: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: AppColors.secondaryDark,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -472,6 +517,4 @@ class FavoritesScreenState extends State<FavoritesScreen>
       ),
     );
   }
-
-
 }

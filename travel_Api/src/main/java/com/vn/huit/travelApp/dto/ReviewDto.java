@@ -19,4 +19,7 @@ public class ReviewDto {
     private Integer rating;
     private String comment;
     private String createdAt;
+    private Long likeCount;
+    private Long dislikeCount;
+    private java.util.List<ReplyDto> replies;
 }

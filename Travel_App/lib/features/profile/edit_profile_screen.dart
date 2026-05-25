@@ -17,11 +17,11 @@ class EditProfileScreenState extends State<EditProfileScreen> {
   final emailController = TextEditingController();
   final dobController = TextEditingController();
   final addressController = TextEditingController();
-  
+
   final AuthService _authService = AuthService();
   final ApiService _apiService = ApiService();
   final ImagePicker _picker = ImagePicker();
-  
+
   String? _userId;
   String? _photoUrl;
   File? _selectedImage;
@@ -50,19 +50,19 @@ class EditProfileScreenState extends State<EditProfileScreen> {
       try {
         final profile = await _apiService.getUserProfile(_userId!);
         if (profile.isNotEmpty) {
-          nameController.text = profile['fullName'] ?? profile['username'] ?? '';
-          
-          if (profile['avatarUrl'] != null && profile['avatarUrl'].toString().isNotEmpty) {
+          nameController.text =
+              profile['fullName'] ?? profile['username'] ?? '';
+
+          if (profile['avatarUrl'] != null &&
+              profile['avatarUrl'].toString().isNotEmpty) {
             String url = profile['avatarUrl'];
             if (url.startsWith('/uploads')) {
-               url = 'http://10.0.2.2:8080$url'; 
+              url = 'http://10.0.2.2:8080$url';
             }
             _photoUrl = url;
           }
         }
-      } catch (e) {
-        debugPrint('Error fetching profile: $e');
-      }
+      } catch (_) {}
     }
     if (mounted) setState(() {});
   }
@@ -131,14 +131,14 @@ class EditProfileScreenState extends State<EditProfileScreen> {
 
       // Cập nhật lại UI sau khi save thành công
       if (updatedProfile['avatarUrl'] != null) {
-         String url = updatedProfile['avatarUrl'];
-         if (url.startsWith('/uploads')) {
-            url = 'http://10.0.2.2:8080$url'; 
-         }
-         _photoUrl = url;
+        String url = updatedProfile['avatarUrl'];
+        if (url.startsWith('/uploads')) {
+          url = 'http://10.0.2.2:8080$url';
+        }
+        _photoUrl = url;
       }
       _selectedImage = null; // reset local file
-      
+
       // Update firebase profile display name if logged in via firebase
       if (firebaseUser != null) {
         await firebaseUser.updateDisplayName(name);
@@ -186,8 +186,7 @@ class EditProfileScreenState extends State<EditProfileScreen> {
     if (picked != null) {
       setState(() {
         dobController.text =
-        '${picked.day.toString().padLeft(2, '0')}/${picked.month.toString().padLeft(2, '0')}/${picked.year}';
-
+            '${picked.day.toString().padLeft(2, '0')}/${picked.month.toString().padLeft(2, '0')}/${picked.year}';
       });
     }
   }
@@ -256,14 +255,14 @@ class EditProfileScreenState extends State<EditProfileScreen> {
         children: [
           CircleAvatar(
             radius: 52,
-            backgroundColor: AppColors.primaryLight.withOpacity(0.2),
+            backgroundColor: AppColors.primaryLight.withValues(alpha: 0.2),
             child: CircleAvatar(
               radius: 49,
               backgroundImage: imageProvider,
               onBackgroundImageError: hasPhoto
                   ? (exception, stackTrace) {}
                   : null,
-              backgroundColor: AppColors.primaryLight.withOpacity(0.3),
+              backgroundColor: AppColors.primaryLight.withValues(alpha: 0.3),
               child: (_selectedImage == null && !hasPhoto)
                   ? Text(
                       name.isNotEmpty ? name[0].toUpperCase() : '?',
@@ -290,7 +289,7 @@ class EditProfileScreenState extends State<EditProfileScreen> {
                   border: Border.all(color: Colors.white, width: 2.5),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withOpacity(0.12),
+                      color: Colors.black.withValues(alpha: 0.12),
                       blurRadius: 6,
                       offset: const Offset(0, 2),
                     ),

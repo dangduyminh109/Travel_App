@@ -2,46 +2,62 @@ package com.vn.huit.travelApp.config;
 
 import com.vn.huit.travelApp.entity.Category;
 import com.vn.huit.travelApp.entity.Destination;
-import com.vn.huit.travelApp.entity.Favorite;
 import com.vn.huit.travelApp.entity.Review;
 import com.vn.huit.travelApp.entity.User;
 import com.vn.huit.travelApp.repository.CategoryRepository;
 import com.vn.huit.travelApp.repository.DestinationRepository;
-import com.vn.huit.travelApp.repository.FavoriteRepository;
 import com.vn.huit.travelApp.repository.ReviewRepository;
 import com.vn.huit.travelApp.repository.UserRepository;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
-import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Random;
+import java.util.Optional;
 
 @Configuration
 public class DataSeeder {
+    private static final String CITY_HCMC = "TP.HCM";
+    private static final String CITY_VUNG_TAU = "Vũng Tàu";
+
+    private static final String CATEGORY_FOOD = "Ăn uống";
+    private static final String CATEGORY_ENTERTAINMENT = "Vui chơi";
+    private static final String CATEGORY_HOTEL = "Nghỉ ngơi";
+    private static final String CATEGORY_CAFE = "Cafe/check-in";
+    private static final String CATEGORY_CULTURE_HISTORY = "Văn hóa/lịch sử";
+    private static final String CATEGORY_SHOPPING = "Mua sắm";
+
+    private static final String TYPE_FOOD = "FOOD";
+    private static final String TYPE_ENTERTAINMENT = "ENTERTAINMENT";
+    private static final String TYPE_HOTEL = "HOTEL";
+    private static final String TYPE_CAFE = "CAFE";
+    private static final String TYPE_CULTURE_HISTORY = "CULTURE_HISTORY";
+    private static final String TYPE_SHOPPING = "SHOPPING";
+
+    private static final String PRICE_FREE = "FREE";
+    private static final String PRICE_BUDGET = "BUDGET";
+    private static final String PRICE_MODERATE = "MODERATE";
+    private static final String PRICE_PREMIUM = "PREMIUM";
+    private static final String PRICE_LUXURY = "LUXURY";
 
     private final CategoryRepository categoryRepository;
     private final DestinationRepository destinationRepository;
     private final ReviewRepository reviewRepository;
     private final UserRepository userRepository;
-    private final FavoriteRepository favoriteRepository;
     private final com.vn.huit.travelApp.service.FirebaseRealtimeService firebaseRealtimeService;
 
     public DataSeeder(CategoryRepository categoryRepository,
                       DestinationRepository destinationRepository,
                       ReviewRepository reviewRepository,
                       UserRepository userRepository,
-                      FavoriteRepository favoriteRepository,
                       com.vn.huit.travelApp.service.FirebaseRealtimeService firebaseRealtimeService) {
         this.categoryRepository = categoryRepository;
         this.destinationRepository = destinationRepository;
         this.reviewRepository = reviewRepository;
         this.userRepository = userRepository;
-        this.favoriteRepository = favoriteRepository;
         this.firebaseRealtimeService = firebaseRealtimeService;
     }
 
@@ -53,9 +69,8 @@ public class DataSeeder {
             }
             Map<String, Category> categories = ensureCategories();
             List<Destination> destinations = ensureDestinations(categories);
-            List<User> users = ensureUsers();
+            ensureUsers();
             ensureReviews(destinations);
-            ensureFavorites(destinations, users);
         };
     }
 
@@ -75,15 +90,33 @@ public class DataSeeder {
         for (Category category : all) {
             map.put(category.getName(), category);
         }
+        ensureCategory(map, CATEGORY_FOOD, "restaurant");
+        ensureCategory(map, CATEGORY_ENTERTAINMENT, "local_play");
+        ensureCategory(map, CATEGORY_HOTEL, "hotel");
+        ensureCategory(map, CATEGORY_CAFE, "local_cafe");
+        ensureCategory(map, CATEGORY_CULTURE_HISTORY, "museum");
+        ensureCategory(map, CATEGORY_SHOPPING, "shopping_bag");
         return map;
+    }
+
+    private Category ensureCategory(Map<String, Category> categories, String name, String icon) {
+        Category existing = categories.get(name);
+        if (existing != null) {
+            return existing;
+        }
+
+        Category category = categoryRepository.findByName(name)
+                .orElseGet(() -> categoryRepository.save(Category.builder()
+                        .name(name)
+                        .icon(icon)
+                        .build()));
+        categories.put(category.getName(), category);
+        return category;
     }
 
     private List<Destination> ensureDestinations(Map<String, Category> categories) {
         long existing = destinationRepository.count();
-        if (existing > 0) {
-            return destinationRepository.findAll();
-        }
-        {
+        if (existing == 0) {
             List<Destination> newItems = new ArrayList<>();
 
             Object[][] placesData = {
@@ -243,7 +276,307 @@ public class DataSeeder {
             }
             destinationRepository.saveAll(newItems);
         }
+        upsertFocusedDestinations(categories);
         return destinationRepository.findAll();
+    }
+
+    private void upsertFocusedDestinations(Map<String, Category> categories) {
+        List<SeedDestination> seeds = List.of(
+                seed("Chợ Bến Thành", "Biểu tượng mua sắm giữa trung tâm",
+                        "Khu chợ lâu đời ở Quận 1, phù hợp để mua quà lưu niệm, thử món ăn địa phương và cảm nhận nhịp sống Sài Gòn.",
+                        "https://upload.wikimedia.org/wikipedia/commons/thumb/9/91/Ben_Thanh_market_2.jpg/960px-Ben_Thanh_market_2.jpg",
+                        CATEGORY_SHOPPING, "chợ,mua sắm,quà lưu niệm,ẩm thực,quận 1", 10.772596, 106.698020, CITY_HCMC,
+                        "Quận 1", "Đường Lê Lợi, phường Bến Thành, Quận 1", TYPE_SHOPPING, PRICE_MODERATE,
+                        10_000L, 500_000L, "07:00 - 19:00", "biểu tượng Sài Gòn,mua đặc sản,khu ăn uống trong chợ", "gia đình,du khách lần đầu,người thích mua sắm"),
+                seed("Dinh Độc Lập", "Di tích lịch sử giữa lòng thành phố",
+                        "Công trình gắn với nhiều dấu mốc lịch sử hiện đại, có khuôn viên rộng và các phòng trưng bày dễ tham quan trong nửa ngày.",
+                        "https://diadiemvietnam.vn/wp-content/uploads/2023/08/Dinh-Doc-Lap.jpg",
+                        CATEGORY_CULTURE_HISTORY, "lịch sử,kiến trúc,bảo tàng,quận 1", 10.777093, 106.695393, CITY_HCMC,
+                        "Quận 1", "135 Nam Kỳ Khởi Nghĩa, phường Bến Thành, Quận 1", TYPE_CULTURE_HISTORY, PRICE_BUDGET,
+                        40_000L, 65_000L, "08:00 - 15:30", "di tích quốc gia,kiến trúc hiện đại,khu hầm chỉ huy", "người thích lịch sử,học sinh sinh viên,du khách quốc tế"),
+                seed("Nhà thờ Đức Bà", "Điểm check-in kiến trúc Pháp",
+                        "Nhà thờ nổi bật với kiến trúc gạch đỏ và vị trí ngay trung tâm, thường được kết hợp tham quan cùng Bưu điện Thành phố.",
+                        "https://upload.wikimedia.org/wikipedia/commons/thumb/d/d9/Notre_dame_saigon.jpg/960px-Notre_dame_saigon.jpg",
+                        CATEGORY_CULTURE_HISTORY, "nhà thờ,kiến trúc,check-in,quận 1", 10.779785, 106.699018, CITY_HCMC,
+                        "Quận 1", "01 Công xã Paris, phường Bến Nghé, Quận 1", TYPE_CULTURE_HISTORY, PRICE_FREE,
+                        0L, 0L, "Tham quan bên ngoài cả ngày", "kiến trúc Pháp,ảnh check-in,gần Bưu điện Thành phố", "cặp đôi,người thích kiến trúc,du khách đi bộ trung tâm"),
+                seed("Bưu điện Trung tâm Sài Gòn", "Không gian cổ điển gần Nhà thờ Đức Bà",
+                        "Tòa nhà bưu điện cổ có mái vòm lớn, bản đồ xưa và nhiều quầy lưu niệm, rất thuận tiện cho lịch trình đi bộ Quận 1.",
+                        "https://upload.wikimedia.org/wikipedia/commons/thumb/f/fb/Saigon_Central_Post_Office_2022.jpg/960px-Saigon_Central_Post_Office_2022.jpg",
+                        CATEGORY_CULTURE_HISTORY, "bưu điện,kiến trúc,quà lưu niệm,quận 1", 10.779836, 106.700030, CITY_HCMC,
+                        "Quận 1", "02 Công xã Paris, phường Bến Nghé, Quận 1", TYPE_CULTURE_HISTORY, PRICE_FREE,
+                        0L, 0L, "07:00 - 18:00", "mái vòm cổ,bản đồ lịch sử,gửi bưu thiếp", "gia đình,người thích chụp ảnh,du khách lần đầu"),
+                seed("Phố đi bộ Nguyễn Huệ", "Trục dạo chơi buổi tối ở Quận 1",
+                        "Không gian đi bộ rộng nối UBND Thành phố với bến Bạch Đằng, nhiều quán cà phê, nhà hàng và hoạt động đường phố về đêm.",
+                        "https://upload.wikimedia.org/wikipedia/commons/thumb/d/d1/Ho_Chi_Minh_City%2C_Saigon%2C_Vietnam_%2849579818542%29.jpg/960px-Ho_Chi_Minh_City%2C_Saigon%2C_Vietnam_%2849579818542%29.jpg",
+                        CATEGORY_ENTERTAINMENT, "đi bộ,buổi tối,check-in,quận 1", 10.773822, 106.703138, CITY_HCMC,
+                        "Quận 1", "Đường Nguyễn Huệ, phường Bến Nghé, Quận 1", TYPE_ENTERTAINMENT, PRICE_FREE,
+                        0L, 0L, "Cả ngày, nhộn nhịp nhất sau 18:00", "không gian đi bộ,nhạc nước,sát bến Bạch Đằng", "nhóm bạn,cặp đôi,du khách thích buổi tối"),
+                seed("Phố Tây Bùi Viện", "Khu phố đêm sôi động",
+                        "Tuyến phố nhiều bar, pub, hàng ăn và khách du lịch quốc tế, phù hợp với người muốn trải nghiệm không khí náo nhiệt về đêm.",
+                        "https://upload.wikimedia.org/wikipedia/commons/thumb/5/52/Bui_Vien_Walking_Street_1.jpg/3840px-Bui_Vien_Walking_Street_1.jpg",
+                        CATEGORY_ENTERTAINMENT, "phố đêm,bar,pub,ăn uống,quận 1", 10.767425, 106.693895, CITY_HCMC,
+                        "Quận 1", "Đường Bùi Viện, phường Phạm Ngũ Lão, Quận 1", TYPE_ENTERTAINMENT, PRICE_MODERATE,
+                        50_000L, 300_000L, "18:00 - 02:00", "phố không ngủ,ẩm thực đường phố,bar và pub", "nhóm bạn,du khách thích nightlife,người trẻ"),
+                seed("Bitexco Financial Tower", "Ngắm thành phố từ trên cao",
+                        "Tòa tháp nổi bật ở trung tâm Quận 1, có khu mua sắm, nhà hàng và đài quan sát nhìn toàn cảnh sông Sài Gòn.",
+                        "https://www.e-architect.com/images/jpgs/vietnam/hcm_financial_tower_a290411_9.jpg",
+                        CATEGORY_ENTERTAINMENT, "view đẹp,skydeck,trung tâm thương mại,quận 1", 10.771613, 106.704758, CITY_HCMC,
+                        "Quận 1", "02 Hải Triều, phường Bến Nghé, Quận 1", TYPE_ENTERTAINMENT, PRICE_PREMIUM,
+                        200_000L, 300_000L, "09:30 - 21:30", "ngắm skyline,Sài Gòn Skydeck,gần phố Nguyễn Huệ", "cặp đôi,người thích chụp ảnh,du khách ngắn ngày"),
+                seed("Cafe Apartment Nguyễn Huệ", "Chung cư cà phê nhiều góc check-in",
+                        "Tòa chung cư cũ trên phố đi bộ Nguyễn Huệ với nhiều quán cà phê, cửa hàng nhỏ và ban công nhìn xuống trung tâm.",
+                        "https://jackfruitadventure.com/wp-content/uploads/2024/07/cafe-apartment-building-1024x683.jpg",
+                        CATEGORY_CAFE, "cafe,check-in,nguyễn huệ,quận 1", 10.773382, 106.703399, CITY_HCMC,
+                        "Quận 1", "42 Nguyễn Huệ, phường Bến Nghé, Quận 1", TYPE_CAFE, PRICE_MODERATE,
+                        50_000L, 150_000L, "09:00 - 22:00", "nhiều quán cà phê,view phố đi bộ,góc ảnh trẻ trung", "nhóm bạn,cặp đôi,người thích cafe"),
+                seed("Bảo tàng Chứng tích Chiến tranh", "Không gian lịch sử nhiều cảm xúc",
+                        "Bảo tàng trưng bày tư liệu, hình ảnh và hiện vật về chiến tranh, phù hợp cho lịch trình tìm hiểu văn hóa lịch sử tại Quận 3.",
+                        "https://upload.wikimedia.org/wikipedia/commons/thumb/3/36/Vietnam-_War_Remnants_Museum.jpg/3840px-Vietnam-_War_Remnants_Museum.jpg",
+                        CATEGORY_CULTURE_HISTORY, "bảo tàng,lịch sử,quận 3", 10.778103, 106.690182, CITY_HCMC,
+                        "Quận 3", "28 Võ Văn Tần, phường Võ Thị Sáu, Quận 3", TYPE_CULTURE_HISTORY, PRICE_BUDGET,
+                        40_000L, 40_000L, "07:30 - 17:30", "tư liệu chiến tranh,khu trưng bày ngoài trời,giáo dục lịch sử", "người thích lịch sử,học sinh sinh viên,du khách quốc tế"),
+                seed("Hồ Con Rùa", "Điểm hẹn cafe vỉa hè Quận 3",
+                        "Khu vòng xoay nổi tiếng với nhiều quán ăn vặt, trà sữa và cà phê xung quanh, hợp để ngồi chơi buổi chiều tối.",
+                        "https://cdn3.ivivu.com/2022/10/h%E1%BB%93-con-r%C3%B9a-ivivu-12.jpg",
+                        CATEGORY_CAFE, "cafe,ăn vặt,quận 3,buổi tối", 10.782878, 106.695680, CITY_HCMC,
+                        "Quận 3", "Công trường Quốc tế, phường Võ Thị Sáu, Quận 3", TYPE_CAFE, PRICE_BUDGET,
+                        30_000L, 100_000L, "16:00 - 23:00", "ăn vặt vỉa hè,không khí trẻ,gần trung tâm", "nhóm bạn,sinh viên,người thích cafe tối"),
+                seed("Phở Hòa Pasteur", "Quán phở lâu năm ở Quận 3",
+                        "Địa chỉ phở quen thuộc trên đường Pasteur, phù hợp cho du khách muốn thử một bữa ăn Việt Nam dễ tiếp cận ngay gần trung tâm.",
+                        "https://upload.wikimedia.org/wikipedia/commons/5/53/Pho-Beef-Noodles-2008.jpg",
+                        CATEGORY_FOOD, "phở,đặc sản,sáng,trưa,quận 3", 10.787140, 106.689873, CITY_HCMC,
+                        "Quận 3", "260C Pasteur, phường Võ Thị Sáu, Quận 3", TYPE_FOOD, PRICE_BUDGET,
+                        70_000L, 120_000L, "06:00 - 23:00", "phở bò,quán lâu năm,gần trung tâm", "du khách lần đầu,gia đình,người muốn ăn nhanh"),
+                seed("Landmark 81", "Tổ hợp mua sắm và ngắm cảnh ở Bình Thạnh",
+                        "Tòa nhà cao nổi bật bên sông Sài Gòn, có trung tâm thương mại, khu ăn uống, rạp chiếu phim và không gian ngắm thành phố.",
+                        "https://upload.wikimedia.org/wikipedia/commons/thumb/4/4e/The_Landmark_81_at_night.jpg/1280px-The_Landmark_81_at_night.jpg",
+                        CATEGORY_ENTERTAINMENT, "landmark 81,view đẹp,mua sắm,bình thạnh", 10.794697, 106.722240, CITY_HCMC,
+                        "Bình Thạnh", "720A Điện Biên Phủ, phường 22, Bình Thạnh", TYPE_ENTERTAINMENT, PRICE_PREMIUM,
+                        0L, 810_000L, "09:30 - 22:00", "tòa nhà cao nhất Việt Nam,trung tâm thương mại,view sông Sài Gòn", "gia đình,cặp đôi,người thích city view"),
+                seed("Vinhomes Central Park", "Công viên ven sông rộng ở Bình Thạnh",
+                        "Không gian xanh bên sông với bãi cỏ, hồ nước, khu vui chơi và góc nhìn đẹp về Landmark 81.",
+                        "https://commons.wikimedia.org/wiki/Special:FilePath/C%C3%B4ng_vi%C3%AAn_Vinhomes_Central_Park%2C_B%C3%ACnh_Th%E1%BA%A1nh%2C_Th%C3%A0nh_ph%E1%BB%91_H%E1%BB%93_Ch%C3%AD_Minh_25-05-2024_1.jpg?width=1280",
+                        CATEGORY_ENTERTAINMENT, "công viên,ven sông,bình thạnh,gia đình", 10.795215, 106.719903, CITY_HCMC,
+                        "Bình Thạnh", "Khu đô thị Vinhomes Central Park, Bình Thạnh", TYPE_ENTERTAINMENT, PRICE_FREE,
+                        0L, 0L, "05:00 - 22:00", "công viên ven sông,khu vui chơi,view Landmark 81", "gia đình,trẻ em,người thích đi dạo"),
+                seed("Khu du lịch Bình Quới", "Không gian xanh kiểu Nam Bộ",
+                        "Khu du lịch ven sông với nhà lá, ao cá, buffet cuối tuần và cảnh quan miền quê ngay trong thành phố.",
+                        "https://bizweb.dktcdn.net/100/101/075/files/khu-du-lich-binh-quoi-ho-chi-minh.jpg?v=1734949274565",
+                        CATEGORY_FOOD, "buffet,nam bộ,ven sông,bình thạnh", 10.831495, 106.733079, CITY_HCMC,
+                        "Bình Thạnh", "1147 Bình Quới, phường 28, Bình Thạnh", TYPE_FOOD, PRICE_MODERATE,
+                        150_000L, 350_000L, "09:00 - 22:00", "không gian miền quê,buffet cuối tuần,ven sông", "gia đình,nhóm bạn,người thích món Việt"),
+                seed("Suối Tiên Theme Park", "Khu vui chơi lớn ở Thủ Đức",
+                        "Công viên giải trí lâu đời với nhiều trò chơi, khu biển nhân tạo và các công trình lấy cảm hứng văn hóa dân gian.",
+                        "https://www.vietnamonline.com/media/uploads/froala_editor/images/vno_ST22.jpg",
+                        CATEGORY_ENTERTAINMENT, "công viên giải trí,trẻ em,thủ đức", 10.870702, 106.803383, CITY_HCMC,
+                        "Thủ Đức", "120 Xa lộ Hà Nội, phường Tân Phú, Thủ Đức", TYPE_ENTERTAINMENT, PRICE_MODERATE,
+                        150_000L, 300_000L, "08:00 - 17:00", "trò chơi gia đình,biển Tiên Đồng,khu văn hóa dân gian", "gia đình,trẻ em,nhóm bạn"),
+                seed("Chùa Bửu Long", "Ngôi chùa kiến trúc Thái ở Thủ Đức",
+                        "Không gian chùa nổi bật với bảo tháp vàng, khuôn viên yên tĩnh và nhiều góc chụp ảnh nhẹ nhàng.",
+                        "https://cdn3.ivivu.com/2022/11/ch%C3%B9a-B%E1%BB%ADu-Long-ivivu.jpg",
+                        CATEGORY_CULTURE_HISTORY, "chùa,kiến trúc,thủ đức,check-in", 10.826758, 106.829192, CITY_HCMC,
+                        "Thủ Đức", "81 Nguyễn Xiển, phường Long Bình, Thủ Đức", TYPE_CULTURE_HISTORY, PRICE_FREE,
+                        0L, 0L, "08:00 - 18:00", "bảo tháp vàng,không gian yên tĩnh,kiến trúc Đông Nam Á", "người thích văn hóa,cặp đôi,du khách thích ảnh đẹp"),
+                seed("Thảo Điền", "Khu cafe và nhà hàng quốc tế",
+                        "Khu vực nhiều quán cà phê, nhà hàng, boutique và không gian xanh, phù hợp cho lịch trình nhẹ nhàng ở phía Đông thành phố.",
+                        "https://maisonoffice.vn/wp-content/uploads/2024/03/3-khu-thao-dien-toa-lac-tai-vi-tri-dac-dia-ngay-xa-lo-ha-noi.jpg",
+                        CATEGORY_CAFE, "cafe,nhà hàng,thảo điền,thủ đức", 10.802509, 106.732549, CITY_HCMC,
+                        "Thủ Đức", "Khu Thảo Điền, phường Thảo Điền, Thủ Đức", TYPE_CAFE, PRICE_MODERATE,
+                        60_000L, 250_000L, "08:00 - 23:00", "nhiều cafe đẹp,nhà hàng quốc tế,khu expat", "cặp đôi,nhóm bạn,người thích cafe brunch"),
+                seed("Hotel Majestic Saigon", "Khách sạn cổ ven sông Sài Gòn",
+                        "Khách sạn lịch sử trên đường Đồng Khởi, phù hợp với du khách muốn nghỉ ở trung tâm Quận 1 và gần nhiều điểm tham quan.",
+                        "https://commons.wikimedia.org/wiki/Special:FilePath/Hotel_Majestic_Saigon.jpg?width=1280",
+                        CATEGORY_HOTEL, "khách sạn,quận 1,ven sông,sang trọng", 10.773244, 106.706721, CITY_HCMC,
+                        "Quận 1", "01 Đồng Khởi, phường Bến Nghé, Quận 1", TYPE_HOTEL, PRICE_LUXURY,
+                        2_500_000L, 6_000_000L, "Nhận phòng từ 14:00", "vị trí trung tâm,kiến trúc cổ,gần bến Bạch Đằng", "du khách nghỉ dưỡng,cặp đôi,khách công tác"),
+                seed("Bãi Sau Vũng Tàu", "Bãi biển dài và đông vui",
+                        "Bãi tắm phổ biến nhất Vũng Tàu, nhiều khách sạn, quán ăn và dịch vụ du lịch dọc đường Thùy Vân.",
+                        "https://vielimousine.com/wp-content/uploads/2023/11/bai-sau-vung-tau.jpg",
+                        CATEGORY_ENTERTAINMENT, "biển,bãi sau,tắm biển,vũng tàu", 10.335701, 107.090911, CITY_VUNG_TAU,
+                        "Bãi Sau", "Đường Thùy Vân, thành phố Vũng Tàu", TYPE_ENTERTAINMENT, PRICE_FREE,
+                        0L, 0L, "Cả ngày", "bãi tắm dài,nhiều khách sạn,gần khu hải sản", "gia đình,nhóm bạn,du khách cuối tuần"),
+                seed("Bãi Trước Vũng Tàu", "Ngắm hoàng hôn và dạo biển",
+                        "Khu bờ biển trung tâm có công viên, hàng cây và tầm nhìn đẹp về vịnh, phù hợp đi dạo chiều tối.",
+                        "https://cdn.vntrip.vn/cam-nang/wp-content/uploads/2017/10/bai-truoc-1.jpg",
+                        CATEGORY_ENTERTAINMENT, "biển,bãi trước,hoàng hôn,vũng tàu", 10.345214, 107.076032, CITY_VUNG_TAU,
+                        "Bãi Trước", "Đường Quang Trung, thành phố Vũng Tàu", TYPE_ENTERTAINMENT, PRICE_FREE,
+                        0L, 0L, "Cả ngày", "ngắm hoàng hôn,công viên ven biển,gần trung tâm", "cặp đôi,gia đình,người thích đi bộ"),
+                seed("Tượng Chúa Kitô Vua", "Điểm ngắm biển trên Núi Nhỏ",
+                        "Tượng Chúa lớn trên đỉnh Núi Nhỏ, cần leo bậc thang nhưng bù lại có góc nhìn rộng xuống biển Vũng Tàu.",
+                        "https://dulichviet.net.vn/wp-content/uploads/2019/07/tuong-chua-kito-2.jpg",
+                        CATEGORY_CULTURE_HISTORY, "tượng chúa,núi nhỏ,view biển,vũng tàu", 10.326529, 107.086756, CITY_VUNG_TAU,
+                        "Núi Nhỏ", "01 Bà Rịa, phường 2, thành phố Vũng Tàu", TYPE_CULTURE_HISTORY, PRICE_FREE,
+                        0L, 0L, "07:00 - 17:00", "leo bậc thang,view biển,tượng biểu tượng Vũng Tàu", "người thích vận động,du khách thích ngắm cảnh,cặp đôi"),
+                seed("Hải đăng Vũng Tàu", "Cung đường ngắm thành phố từ cao",
+                        "Ngọn hải đăng cổ trên Núi Nhỏ, đường lên có nhiều góc nhìn đẹp và quán ăn vặt nổi tiếng.",
+                        "https://www.elle.vn/wp-content/uploads/2019/07/18/DJI_0133.jpg",
+                        CATEGORY_CULTURE_HISTORY, "hải đăng,view đẹp,núi nhỏ,vũng tàu", 10.335091, 107.081927, CITY_VUNG_TAU,
+                        "Núi Nhỏ", "Phường 2, thành phố Vũng Tàu", TYPE_CULTURE_HISTORY, PRICE_FREE,
+                        0L, 10_000L, "07:00 - 22:00", "view toàn thành phố,cung đường đẹp,điểm chụp ảnh", "cặp đôi,nhóm bạn,người thích săn ảnh"),
+                seed("Hồ Mây Park", "Khu vui chơi trên núi",
+                        "Tổ hợp cáp treo, công viên giải trí và khu sinh thái trên Núi Lớn, phù hợp đi nửa ngày đến một ngày.",
+                        "https://cdn3.ivivu.com/2024/01/ho-may-park-ivivu-9-1024x768.jpg",
+                        CATEGORY_ENTERTAINMENT, "hồ mây,cáp treo,khu vui chơi,vũng tàu", 10.362098, 107.066751, CITY_VUNG_TAU,
+                        "Núi Lớn", "01A Trần Phú, phường 1, thành phố Vũng Tàu", TYPE_ENTERTAINMENT, PRICE_PREMIUM,
+                        400_000L, 500_000L, "08:00 - 18:00", "cáp treo,trò chơi gia đình,view Núi Lớn", "gia đình,trẻ em,nhóm bạn"),
+                seed("Mũi Nghinh Phong", "Mũi đất nhiều góc chụp ảnh",
+                        "Điểm check-in nằm giữa Bãi Sau và Bãi Dứa, có gió biển mạnh, view biển mở và các lối đi đá đẹp.",
+                        "https://media.gody.vn/images/ba-ria-vung-tau/khu-du-lich-mui-nghinh-phong/12-2017/94000648-20171228071615-ba-ria-vung-tau-khu-du-lich-mui-nghinh-phong.jpg",
+                        CATEGORY_ENTERTAINMENT, "check-in,biển,mũi nghinh phong,vũng tàu", 10.323958, 107.088586, CITY_VUNG_TAU,
+                        "Bãi Dứa", "Số 1 Hạ Long, phường 2, thành phố Vũng Tàu", TYPE_ENTERTAINMENT, PRICE_FREE,
+                        0L, 0L, "Cả ngày", "view biển rộng,góc ảnh đẹp,gần Tượng Chúa", "cặp đôi,nhóm bạn,người thích chụp ảnh"),
+                seed("Chợ đêm Hải sản Vũng Tàu", "Ăn hải sản gần Bãi Sau",
+                        "Khu ăn uống buổi tối tập trung nhiều quầy hải sản, phù hợp cho nhóm bạn muốn ăn no sau khi tắm biển.",
+                        "https://www.dulichthienthai.com/wp-content/uploads/2022/05/cho-dem-vung-tau-cho-hai-san-vung-tau-gia-re.jpg",
+                        CATEGORY_FOOD, "hải sản,chợ đêm,bãi sau,vũng tàu", 10.337792, 107.088363, CITY_VUNG_TAU,
+                        "Bãi Sau", "Khu vực sau khách sạn Imperial, gần đường Thùy Vân", TYPE_FOOD, PRICE_MODERATE,
+                        100_000L, 400_000L, "17:00 - 23:30", "hải sản nướng,không khí buổi tối,gần Bãi Sau", "nhóm bạn,gia đình,người thích hải sản"),
+                seed("Bánh khọt Gốc Vú Sữa", "Đặc sản bánh khọt Vũng Tàu",
+                        "Quán bánh khọt nổi tiếng với bánh giòn, tôm tươi và rau sống, thường đông vào cuối tuần.",
+                        "https://images.squarespace-cdn.com/content/v1/538bdee5e4b0db4eab0960f9/1607990408395-3ZW2HACVY4HAY4VMZ6EO/1.jpg",
+                        CATEGORY_FOOD, "bánh khọt,đặc sản,vũng tàu,ăn trưa", 10.346061, 107.084358, CITY_VUNG_TAU,
+                        "Trung tâm", "14 Nguyễn Trường Tộ, phường 2, thành phố Vũng Tàu", TYPE_FOOD, PRICE_BUDGET,
+                        40_000L, 100_000L, "06:00 - 14:30", "bánh khọt đặc sản,tôm tươi,quán lâu năm", "du khách lần đầu,gia đình,người thích món địa phương"),
+                seed("Gành Hào Vũng Tàu", "Nhà hàng hải sản nhìn ra biển",
+                        "Địa chỉ hải sản quen thuộc ở đường Trần Phú, hợp cho bữa tối gia đình hoặc nhóm bạn muốn ngồi lâu.",
+                        "https://yeuvungtau.com/wp-content/uploads/2023/03/nha-hang-ganh-hao-2-vung-tau-1.jpg",
+                        CATEGORY_FOOD, "hải sản,nhà hàng,view biển,vũng tàu", 10.361437, 107.066903, CITY_VUNG_TAU,
+                        "Bãi Dâu", "03 Trần Phú, phường 5, thành phố Vũng Tàu", TYPE_FOOD, PRICE_PREMIUM,
+                        150_000L, 600_000L, "10:00 - 22:00", "hải sản tươi,view biển,phù hợp đi nhóm", "gia đình,nhóm bạn,khách công tác"),
+                seed("The Imperial Hotel Vũng Tàu", "Khách sạn gần Bãi Sau",
+                        "Khách sạn phong cách cổ điển nằm sát khu Bãi Sau, phù hợp với du khách muốn nghỉ dưỡng tiện ra biển.",
+                        "https://commons.wikimedia.org/wiki/Special:FilePath/The_Imperial_Hotel.jpg?width=1280",
+                        CATEGORY_HOTEL, "khách sạn,bãi sau,nghỉ dưỡng,vũng tàu", 10.337222, 107.090558, CITY_VUNG_TAU,
+                        "Bãi Sau", "159 Thùy Vân, phường Thắng Tam, thành phố Vũng Tàu", TYPE_HOTEL, PRICE_LUXURY,
+                        2_500_000L, 5_500_000L, "Nhận phòng từ 15:00", "gần biển,phong cách cổ điển,hợp nghỉ dưỡng", "cặp đôi,gia đình,du khách nghỉ cuối tuần"),
+                seed("Lotte Mart Vũng Tàu", "Mua sắm và ăn uống trong nhà",
+                        "Trung tâm thương mại dễ ghé khi trời mưa hoặc cần mua đồ dùng, có siêu thị, khu ăn uống và rạp chiếu phim.",
+                        "https://cbm.com.vn/img_data/images/upload/construction/pcchinh_1410336684.jpg",
+                        CATEGORY_SHOPPING, "mua sắm,siêu thị,ăn uống,trời mưa,vũng tàu", 10.350824, 107.095473, CITY_VUNG_TAU,
+                        "Trung tâm", "Góc đường 3/2 và Thi Sách, thành phố Vũng Tàu", TYPE_SHOPPING, PRICE_MODERATE,
+                        30_000L, 1_000_000L, "08:00 - 22:00", "siêu thị,khu ăn uống,rạp phim", "gia đình,du khách cần mua sắm,ngày mưa")
+        );
+
+        List<Destination> toSave = new ArrayList<>();
+        for (SeedDestination seed : seeds) {
+            Destination destination = findSeedDestination(seed).orElseGet(Destination::new);
+            applySeed(destination, seed, categories);
+            toSave.add(destination);
+        }
+        destinationRepository.saveAll(toSave);
+    }
+
+    private Optional<Destination> findSeedDestination(SeedDestination seed) {
+        Optional<Destination> exact = destinationRepository
+                .findFirstByTitleIgnoreCaseAndCityIgnoreCase(seed.title(), seed.city());
+        if (exact.isPresent()) {
+            return exact;
+        }
+
+        return destinationRepository.findByTitleIgnoreCase(seed.title()).stream()
+                .filter(destination -> isBlank(destination.getCity())
+                        || seed.city().equalsIgnoreCase(destination.getCity()))
+                .findFirst();
+    }
+
+    private void applySeed(Destination destination, SeedDestination seed, Map<String, Category> categories) {
+        destination.setTitle(seed.title());
+        destination.setSubtitle(seed.subtitle());
+        destination.setDescription(seed.description());
+        destination.setImageUrl(seed.imageUrl());
+        destination.setRegion(seed.city());
+        destination.setCity(seed.city());
+        destination.setDistrict(seed.district());
+        destination.setAddress(seed.address());
+        destination.setPlaceType(seed.placeType());
+        destination.setPriceLevel(seed.priceLevel());
+        destination.setMinPrice(seed.minPrice());
+        destination.setMaxPrice(seed.maxPrice());
+        destination.setOpeningHours(seed.openingHours());
+        destination.setHighlights(seed.highlights());
+        destination.setSuitableFor(seed.suitableFor());
+        destination.setTags(seed.tags());
+        destination.setLatitude(seed.latitude());
+        destination.setLongitude(seed.longitude());
+        destination.setCategory(ensureCategory(categories, seed.categoryName(), iconForCategory(seed.categoryName())));
+    }
+
+    private String iconForCategory(String categoryName) {
+        return switch (categoryName) {
+            case CATEGORY_FOOD -> "restaurant";
+            case CATEGORY_ENTERTAINMENT -> "local_play";
+            case CATEGORY_HOTEL -> "hotel";
+            case CATEGORY_CAFE -> "local_cafe";
+            case CATEGORY_CULTURE_HISTORY -> "museum";
+            case CATEGORY_SHOPPING -> "shopping_bag";
+            default -> "place";
+        };
+    }
+
+    private boolean isBlank(String value) {
+        return value == null || value.isBlank();
+    }
+
+    private SeedDestination seed(
+            String title,
+            String subtitle,
+            String description,
+            String imageUrl,
+            String categoryName,
+            String tags,
+            Double latitude,
+            Double longitude,
+            String city,
+            String district,
+            String address,
+            String placeType,
+            String priceLevel,
+            Long minPrice,
+            Long maxPrice,
+            String openingHours,
+            String highlights,
+            String suitableFor) {
+        return new SeedDestination(
+                title,
+                subtitle,
+                description,
+                imageUrl,
+                categoryName,
+                tags,
+                latitude,
+                longitude,
+                city,
+                district,
+                address,
+                placeType,
+                priceLevel,
+                minPrice,
+                maxPrice,
+                openingHours,
+                highlights,
+                suitableFor);
+    }
+
+    private record SeedDestination(
+            String title,
+            String subtitle,
+            String description,
+            String imageUrl,
+            String categoryName,
+            String tags,
+            Double latitude,
+            Double longitude,
+            String city,
+            String district,
+            String address,
+            String placeType,
+            String priceLevel,
+            Long minPrice,
+            Long maxPrice,
+            String openingHours,
+            String highlights,
+            String suitableFor) {
     }
 
     private List<User> ensureUsers() {
@@ -267,41 +600,11 @@ public class DataSeeder {
     }
 
     private void ensureReviews(List<Destination> destinations) {
-        long existing = reviewRepository.count();
-        int target = 30;
-        if (existing >= target) {
-            return;
-        }
-        int missing = (int) (target - existing);
-        List<User> users = userRepository.findAll();
-        if (users.isEmpty()) return;
-        String[] comments = {
-                "Cảnh đẹp, dịch vụ tốt.",
-                "Trải nghiệm đáng nhớ.",
-                "Không khí dễ chịu và đồ ăn ngon.",
-                "Rất đáng để quay lại.",
-                "Tuyệt vời cho kỳ nghỉ cuối tuần."
-        };
-
-        Random random = new Random(42);
-        List<Review> newReviews = new ArrayList<>();
-        for (int i = 0; i < missing; i++) {
-            Destination destination = destinations.get(random.nextInt(destinations.size()));
-            User user = users.get(i % users.size());
-            Review review = Review.builder()
-                    .user(user)
-                    .rating(3 + random.nextInt(3))
-                    .comment(comments[i % comments.length])
-                    .createdAt(LocalDateTime.now().minusDays(random.nextInt(60) + 1))
-                    .destination(destination)
-                    .build();
-            newReviews.add(review);
-        }
-        reviewRepository.saveAll(newReviews);
-
         for (Destination destination : destinations) {
             List<Review> reviews = reviewRepository.findByDestination_IdOrderByCreatedAtDesc(destination.getId());
             if (reviews.isEmpty()) {
+                destination.setReviewCount(0);
+                destination.setRating(0.0);
                 continue;
             }
             int count = reviews.size();
@@ -310,26 +613,5 @@ public class DataSeeder {
             destination.setRating(sum / (double) count);
         }
         destinationRepository.saveAll(destinations);
-    }
-
-    private void ensureFavorites(List<Destination> destinations, List<User> users) {
-        long existing = favoriteRepository.count();
-        int target = 30;
-        if (existing >= target || users.isEmpty()) {
-            return;
-        }
-        Random random = new Random(24);
-        int attempts = 0;
-        while (favoriteRepository.count() < target && attempts < target * 5) {
-            User user = users.get(random.nextInt(users.size()));
-            Destination destination = destinations.get(random.nextInt(destinations.size()));
-            if (!favoriteRepository.existsByUser_UsernameAndDestination_Id(user.getUsername(), destination.getId())) {
-                favoriteRepository.save(Favorite.builder()
-                        .user(user)
-                        .destination(destination)
-                        .build());
-            }
-            attempts++;
-        }
     }
 }
