@@ -17,7 +17,7 @@ class AuthLocalService {
     final path = join(await getDatabasesPath(), 'auth_local.db');
     return await openDatabase(
       path,
-      version: 2,
+      version: 3,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -30,16 +30,18 @@ class AuthLocalService {
                 email TEXT,
                 displayName TEXT,
                 provider TEXT,
-                photoUrl TEXT
+                photoUrl TEXT,
+                role TEXT
             )
         ''');
   }
 
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
     if (oldVersion < 2) {
-      await db.execute(
-        'ALTER TABLE user_session ADD COLUMN photoUrl TEXT',
-      );
+      await db.execute('ALTER TABLE user_session ADD COLUMN photoUrl TEXT');
+    }
+    if (oldVersion < 3) {
+      await db.execute('ALTER TABLE user_session ADD COLUMN role TEXT');
     }
   }
 
@@ -49,6 +51,7 @@ class AuthLocalService {
     required String displayName,
     required String provider,
     String? photoUrl,
+    String role = 'USER',
   }) async {
     final database = await db;
     await database.insert('user_session', {
@@ -57,6 +60,7 @@ class AuthLocalService {
       'displayName': displayName,
       'provider': provider,
       'photoUrl': photoUrl ?? '',
+      'role': role,
     }, conflictAlgorithm: ConflictAlgorithm.replace);
   }
 

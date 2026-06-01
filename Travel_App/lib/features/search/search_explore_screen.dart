@@ -2,9 +2,9 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
-import '../../core/constants/app_config.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/data/api_service.dart';
+import '../../core/data/auth_service.dart';
 import '../../core/data/destination_model.dart';
 import '../../core/data/favorite_local_service.dart';
 import '../../core/data/travel_repository.dart';
@@ -37,9 +37,10 @@ class SearchExploreScreen extends StatefulWidget {
 
 class SearchExploreScreenState extends State<SearchExploreScreen> {
   final _api = ApiService();
+  final _authService = AuthService();
   final _repository = TravelRepository();
   final _favLocal = FavoriteLocalService();
-  final _userId = AppConfig.demoUserId;
+  String? _userId;
   final searchController = TextEditingController();
 
   List<DestinationModel> _places = [];
@@ -134,6 +135,7 @@ class SearchExploreScreenState extends State<SearchExploreScreen> {
       _error = null;
     });
     try {
+      await _resolveUserId();
       await _syncFavorites();
       final ids = await _favLocal.getAllFavoriteIds();
       if (!mounted) return;
@@ -219,22 +221,23 @@ class SearchExploreScreenState extends State<SearchExploreScreen> {
   }
 
   Future<void> _syncFavorites() async {
+    if (_userId == null || _userId!.isEmpty) return;
     final addIds = await _favLocal.getUnsyncedAddIds();
     for (final id in addIds) {
       try {
-        await _api.addFavorite(_userId, id);
+        await _api.addFavorite(_userId!, id);
         await _favLocal.markSyncedAdd(id);
       } catch (_) {}
     }
     final removeIds = await _favLocal.getUnsyncedRemoveIds();
     for (final id in removeIds) {
       try {
-        await _api.removeFavorite(_userId, id);
+        await _api.removeFavorite(_userId!, id);
         await _favLocal.markSyncedRemove(id);
       } catch (_) {}
     }
     try {
-      final remoteIds = await _api.getFavoriteIds(_userId);
+      final remoteIds = await _api.getFavoriteIds(_userId!);
       await _favLocal.applyRemoteFavorites(remoteIds);
     } catch (_) {}
   }
@@ -253,17 +256,29 @@ class SearchExploreScreenState extends State<SearchExploreScreen> {
   }
 
   Future<void> _syncAdd(int destinationId) async {
+    if (_userId == null || _userId!.isEmpty) return;
     try {
-      await _api.addFavorite(_userId, destinationId);
+      await _api.addFavorite(_userId!, destinationId);
       await _favLocal.markSyncedAdd(destinationId);
     } catch (_) {}
   }
 
   Future<void> _syncRemove(int destinationId) async {
+    if (_userId == null || _userId!.isEmpty) return;
     try {
-      await _api.removeFavorite(_userId, destinationId);
+      await _api.removeFavorite(_userId!, destinationId);
       await _favLocal.markSyncedRemove(destinationId);
     } catch (_) {}
+  }
+
+  Future<void> _resolveUserId() async {
+    final firebaseUser = _authService.currentUser;
+    if (firebaseUser != null) {
+      _userId = firebaseUser.uid;
+      return;
+    }
+    final session = await _authService.getUserSession();
+    _userId = session?['uid'] as String?;
   }
 
   Future<void> _applySuggestion(_SearchSuggestion suggestion) async {

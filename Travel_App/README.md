@@ -1,43 +1,36 @@
 # Travel_App - Flutter Mobile App
 
-Travel_App là frontend Flutter cho ứng dụng quảng bá và tra cứu địa điểm du lịch TP.HCM + Vũng Tàu. App ưu tiên cho người dùng xem nội dung không cần đăng nhập, chỉ yêu cầu đăng nhập khi thực hiện thao tác cá nhân như review, phản hồi, like/dislike, profile và đồng bộ yêu thích.
+Flutter app cho hệ thống Travel App. App ưu tiên trải nghiệm khách du lịch: xem địa điểm không cần đăng nhập, đăng nhập khi cần thao tác cá nhân, và có màn quản trị cho tài khoản ADMIN.
 
 ## Công Nghệ
 
 - Flutter / Dart
 - Firebase Auth
 - Firebase Realtime Database
+- REST API tới Spring Boot backend
 - SQLite local cache qua `sqflite`
 - Google Maps Flutter
-- HTTP REST API tới Spring Boot backend
 
-## Cấu Trúc Chính
+## Cấu Trúc Thư Mục
 
-- `lib/main.dart`: khởi tạo Firebase và mở app vào `MainScreen`.
-- `lib/core/constants`: màu sắc, config, API keys local.
-- `lib/core/data`: model, API service, repository, local cache, auth, favorite local, realtime sync.
-- `lib/features/home`: Home gợi ý địa điểm/khu vực/nhu cầu.
-- `lib/features/search`: Search/filter địa điểm theo API và fallback offline cache.
-- `lib/features/place_detail`: chi tiết địa điểm, map, review, reply.
-- `lib/features/favorites`: danh sách yêu thích local/online.
-- `lib/features/profile`: hồ sơ, chỉnh profile, danh sách review.
-- `lib/features/auth`: login, register, forgot password.
-- `test`: unit/widget test cho model, cache và flow mở app không cần login.
-
-## Chức Năng Chính
-
-- Mở app và xem địa điểm không cần đăng nhập.
-- Home hiển thị gợi ý nổi bật, khu vực và nhu cầu du khách.
-- Search/filter theo thành phố, khu vực, loại địa điểm, giá, rating, nearby.
-- Detail hiển thị địa chỉ, quận/khu vực, giá, giờ mở cửa, highlights, phù hợp với ai.
-- Offline text + metadata bằng SQLite sau khi mở app online một lần.
-- Review, phản hồi, sửa/xóa phản hồi, like/dislike review.
-- Favorite local khi chưa đăng nhập và sync khi có tài khoản.
-- Map hiển thị marker địa điểm; các dịch vụ cần internet sẽ báo trạng thái phù hợp khi lỗi.
+```text
+lib/
+├── core/
+│   ├── constants       # app config, colors, API keys local
+│   └── data            # model, api service, repository, cache, auth, favorite
+└── features/
+    ├── admin           # dashboard, CRUD địa điểm, CRUD danh mục
+    ├── auth            # login, sign up, forgot password
+    ├── favorites       # yêu thích
+    ├── home            # trang chủ
+    ├── place_detail    # chi tiết, map, review/reply
+    ├── profile         # hồ sơ, role, nút quản trị
+    └── search          # search/filter
+```
 
 ## Cấu Hình Secret
 
-Các file thật không public GitHub:
+Các file thật không được public GitHub:
 
 ```text
 lib/core/constants/api_keys.dart
@@ -45,7 +38,7 @@ android/app/google-services.json
 android/secrets.properties
 ```
 
-Nếu lấy source từ GitHub/public, copy file mẫu:
+Nếu pull từ GitHub, copy file mẫu:
 
 ```powershell
 copy lib\core\constants\api_keys.example.dart lib\core\constants\api_keys.dart
@@ -53,23 +46,33 @@ copy android\app\google-services.example.json android\app\google-services.json
 copy android\secrets.example.properties android\secrets.properties
 ```
 
-Sau đó điền key thật. Nếu dùng gói nộp thầy, các file thật có thể đã được kèm sẵn.
-
-`android/secrets.properties` cần có:
+`android/secrets.properties`:
 
 ```properties
 GOOGLE_MAPS_API_KEY=YOUR_ANDROID_MAPS_KEY
 ```
 
+`google-services.json` phải đúng Firebase project và đúng package:
+
+```text
+vn.com.huit.travelapp
+```
+
 ## Backend URL
 
-Mặc định app gọi backend qua:
+Mặc định app gọi backend qua Android Emulator:
 
 ```text
 http://10.0.2.2:8080/api
 ```
 
-Địa chỉ này dùng cho Android Emulator. Nếu chạy trên điện thoại thật, đổi `_baseUrl` trong `lib/core/data/api_service.dart` sang IP máy chạy backend:
+File cấu hình:
+
+```text
+lib/core/data/api_service.dart
+```
+
+Nếu chạy trên điện thoại thật, đổi `_baseUrl` thành IP máy chạy backend:
 
 ```text
 http://<IP_MAY_TINH>:8080/api
@@ -77,32 +80,90 @@ http://<IP_MAY_TINH>:8080/api
 
 ## Chạy App
 
-Từ thư mục `Travel_App`:
-
 ```powershell
 flutter pub get
 flutter run
 ```
 
-Trước khi mở app, nên chạy backend và MySQL để app tải dữ liệu lần đầu và ghi cache offline.
+Nên chạy backend và MySQL trước để app tải dữ liệu lần đầu và ghi cache offline.
+
+## Luồng Đăng Nhập Và Phân Quyền
+
+App dùng Firebase Auth. Backend chỉ nhận Firebase ID token, không nhận password trực tiếp.
+
+Luồng:
+
+1. User đăng nhập bằng email/password hoặc Google trong Flutter.
+2. `AuthService` lấy Firebase user.
+3. `ApiService.syncUser()` gọi `POST /api/users/sync`.
+4. `ApiService` tự thêm header:
+
+```text
+Authorization: Bearer <firebase_id_token>
+```
+
+5. Backend verify token và trả user có `role`.
+6. `AuthLocalService` lưu session local gồm `uid`, `email`, `displayName`, `photoUrl`, `role`.
+7. `ProfileScreen` đọc role:
+   - `USER`: chỉ thấy chức năng người dùng.
+   - `ADMIN`: thấy nút mở trang quản trị.
+
+Các file liên quan:
+
+```text
+lib/core/data/auth_service.dart
+lib/core/data/api_service.dart
+lib/core/data/auth_local_service.dart
+lib/features/profile/presentation/profile_screen.dart
+lib/features/admin/
+```
+
+## Màn Admin
+
+Admin mở từ tab `Hồ sơ` sau khi đăng nhập tài khoản có role `ADMIN`.
+
+Các màn:
+
+- `admin_dashboard_screen.dart`: thống kê tổng quan, top rating, top favorite, thống kê theo danh mục.
+- `admin_destination_list_screen.dart`: danh sách địa điểm.
+- `admin_destination_form_screen.dart`: thêm/sửa địa điểm.
+- `admin_category_list_screen.dart`: thêm/sửa/xóa danh mục.
+
+Lưu ý khi nhập URL ảnh:
+
+- Chỉ nhập link ảnh gốc như `https://...jpg`.
+- Không tự thêm `http://10.0.2.2:8080/api/images/proxy?...`.
+- App/backend sẽ tự chuyển ảnh qua proxy khi hiển thị.
+
+## Quyền Trên UI
+
+- Khách chưa đăng nhập vẫn xem Home/Search/Detail.
+- Khi bấm review/reply/like/dislike mà chưa đăng nhập, app mời đăng nhập.
+- USER không thấy nút quản trị.
+- ADMIN thấy nút quản trị trong Hồ sơ.
+- Nếu API admin trả `401/403`, màn admin hiển thị lỗi quyền.
+
+Lưu ý: UI chỉ là lớp hỗ trợ trải nghiệm; backend mới là lớp chặn quyền chính.
 
 ## Offline Cache
 
-App dùng `travel_cache.db` để lưu:
+App dùng SQLite database `travel_cache.db`.
+
+Cache:
 
 - destinations
 - categories
 - raw JSON metadata
 
-Luồng hoạt động:
+Luồng:
 
-- Online: gọi API backend, hiển thị dữ liệu mới và lưu SQLite.
-- Offline/backend tắt: đọc dữ liệu đã cache để xem Home/Search/Detail.
-- Không cache ảnh, review, Firebase realtime hoặc Google Maps offline.
+- Online: gọi API backend, hiển thị dữ liệu mới, lưu cache.
+- Offline/backend tắt: đọc cache để xem Home/Search/Detail.
+- Không cache ảnh, review, Firebase realtime hoặc Google Maps.
 
-Nếu cache trống, cần mở app khi có backend/internet ít nhất một lần.
+Nếu cache rỗng, cần mở app online một lần.
 
-## Kiểm Tra
+## Test
 
 ```powershell
 flutter analyze
@@ -116,7 +177,27 @@ Kỳ vọng:
 
 ## Lỗi Thường Gặp
 
-- Không đăng nhập được Firebase: kiểm tra emulator/thiết bị có internet thật và DNS hoạt động.
-- Không gọi được backend trên emulator: đảm bảo backend chạy ở `localhost:8080` trên máy tính, app dùng `10.0.2.2`.
-- Không thấy ảnh: đảm bảo backend đang chạy để dùng image proxy, hoặc ảnh ngoài internet không bị chặn.
-- Google Maps không hiện đúng: kiểm tra `android/secrets.properties`, package name và SHA restriction trên Google Cloud.
+- Login Firebase xoay lâu: kiểm tra emulator có internet thật; mở Chrome trong emulator thử vào Google.
+- Không gọi được backend: backend phải chạy tại `localhost:8080`; emulator dùng `10.0.2.2`.
+- Không thấy ảnh: backend phải chạy để image proxy hoạt động; link ảnh gốc ngoài internet cũng phải còn truy cập được.
+- Google Maps lỗi: kiểm tra `android/secrets.properties`, package name, SHA restriction trên Google Cloud.
+- Không thấy nút quản trị: kiểm tra email đã nằm trong `app.admin-emails`, đăng xuất/đăng nhập lại để sync role.
+
+## File Không Được Commit Public
+
+```text
+lib/core/constants/api_keys.dart
+android/app/google-services.json
+android/secrets.properties
+.dart_tool/
+build/
+android/.gradle/
+```
+
+Chỉ commit:
+
+```text
+lib/core/constants/api_keys.example.dart
+android/app/google-services.example.json
+android/secrets.example.properties
+```

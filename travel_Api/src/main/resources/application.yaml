@@ -35,3 +35,6 @@ firebase:
 jwt:
   secret: ${JWT_SECRET:CHANGE_ME_FOR_LOCAL_DEVELOPMENT}
   expiration: ${JWT_EXPIRATION:86400000}
+
+app:
+  admin-emails: ${ADMIN_EMAILS:}

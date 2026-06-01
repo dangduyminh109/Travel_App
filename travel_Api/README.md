@@ -1,6 +1,6 @@
-# travel_Api - Backend Spring Boot
+# travel_Api - Spring Boot Backend
 
-Backend cung cấp REST API cho ứng dụng Travel App. Dữ liệu chính được lưu trong MySQL, Firebase Admin dùng để đẩy review/reply/reaction/notification lên Firebase Realtime Database.
+Backend cung cấp REST API cho Travel App. Dữ liệu chính lưu trong MySQL, xác thực dùng Firebase ID token, role lưu trong bảng `users`.
 
 ## Công Nghệ
 
@@ -10,38 +10,42 @@ Backend cung cấp REST API cho ứng dụng Travel App. Dữ liệu chính đư
 - Spring Security
 - MySQL 8
 - Firebase Admin SDK
-- Swagger/OpenAPI qua Springdoc
+- Springdoc OpenAPI
 
-## Cấu Trúc Chính
+## Cấu Trúc Thư Mục
 
-- `config`: cấu hình Firebase, Security, CORS, static uploads và seed data.
-- `controller`: REST API cho categories, destinations, reviews, favorites, users và image proxy.
-- `dto`: object trả về/nhận vào từ API.
-- `entity`: JPA entities như `Destination`, `Category`, `Review`, `Reply`, `Favorite`, `User`.
-- `repository`: Spring Data repository.
-- `service`: logic hỗ trợ search/filter, Firebase Realtime và user profile.
-- `src/main/resources`: cấu hình runtime và Firebase service account local.
+```text
+src/main/java/com/vn/huit/travelApp
+├── config        # Firebase, Security, CORS, seed data
+├── controller    # REST controllers
+├── dto           # Request/response DTO
+├── entity        # JPA entities
+├── repository    # Spring Data repositories
+├── security      # Firebase token filter, principal
+└── service       # Business logic, search, auth helper, realtime
+```
 
-## API Chính
+## Cấu Hình Local
 
-- `GET /api/destinations`: danh sách địa điểm.
-- `GET /api/destinations/{id}`: chi tiết địa điểm.
-- `GET /api/destinations/search`: search/filter theo `q`, `city`, `district`, `placeType`, `priceLevel`, `minRating`, `nearId`, `radiusKm`, `sortBy`.
-- `GET /api/destinations/latest`: địa điểm mới/nổi bật.
-- `GET /api/destinations/by-category/{category}`: lọc theo danh mục.
-- `GET /api/categories`: danh mục.
-- `GET/POST/PUT/DELETE /api/destinations/{id}/reviews`: đánh giá địa điểm.
-- `POST/PUT/DELETE /api/destinations/reviews/{reviewId}/replies`: phản hồi đánh giá.
-- `POST /api/destinations/reviews/{reviewId}/like`: like/dislike review.
-- `GET/POST/DELETE /api/users/{userId}/favorites`: yêu thích.
-- `GET/PUT /api/users/{username}`: hồ sơ người dùng.
-- `GET /api/images/proxy?url=...`: proxy ảnh ngoài internet.
+File chính:
 
-## Cấu Hình
+```text
+src/main/resources/application.yaml
+```
 
-File chính: `src/main/resources/application.yaml`.
+File local ignored:
 
-Backend hỗ trợ override bằng biến môi trường hoặc file ignored `src/main/resources/application-local.yaml`.
+```text
+src/main/resources/application-local.yaml
+```
+
+Backend tự import `application-local.yaml` nếu file tồn tại:
+
+```yaml
+spring:
+  config:
+    import: optional:file:src/main/resources/application-local.yaml
+```
 
 Các biến quan trọng:
 
@@ -49,67 +53,194 @@ Các biến quan trọng:
 DB_URL
 DB_USERNAME
 DB_PASSWORD
-JWT_SECRET
-JWT_EXPIRATION
 FIREBASE_SERVICE_ACCOUNT_PATH
 FIREBASE_DATABASE_URL
+JWT_SECRET
+JWT_EXPIRATION
+ADMIN_EMAILS
 ```
 
-File Firebase Admin thật cần nằm ở:
+Ví dụ `application-local.yaml`:
+
+```yaml
+firebase:
+  service-account-path: src/main/resources/serviceAccountKey.json
+  database-url: https://<project-id>-default-rtdb.asia-southeast1.firebasedatabase.app
+
+app:
+  admin-emails: admin1@example.com,admin2@example.com
+```
+
+Firebase Admin service account thật đặt tại:
 
 ```text
 src/main/resources/serviceAccountKey.json
 ```
 
-Nếu lấy source từ GitHub/public, copy:
+Nếu pull từ GitHub, copy file mẫu:
 
 ```powershell
-copy src\main\resources\serviceAccountKey.example.json src\main\resources\serviceAccountKey.json
 copy src\main\resources\application.example.yaml src\main\resources\application-local.yaml
+copy src\main\resources\serviceAccountKey.example.json src\main\resources\serviceAccountKey.json
 ```
-
-Sau đó điền thông tin thật. Nếu dùng gói nộp thầy, các file thật có thể đã được kèm sẵn.
 
 ## Chạy Backend
 
-Từ thư mục cha, chạy MySQL:
+Từ thư mục cha chạy MySQL:
 
 ```powershell
 docker compose up -d
 ```
 
-Từ thư mục backend:
+Từ thư mục `travel_Api`:
 
 ```powershell
 .\mvnw.cmd spring-boot:run
 ```
 
-Backend chạy ở:
+Backend chạy tại:
 
 ```text
 http://localhost:8080
 ```
 
-Swagger UI nếu bật:
+Swagger UI:
 
 ```text
 http://localhost:8080/swagger-ui.html
 ```
 
+## Phân Quyền
+
+Backend dùng Firebase ID token. Client gửi token qua header:
+
+```text
+Authorization: Bearer <firebase_id_token>
+```
+
+Các class chính:
+
+- `config/SecurityConfig.java`: khai báo rule public/user/admin.
+- `security/FirebaseAuthenticationFilter.java`: verify token bằng Firebase Admin SDK.
+- `security/FirebaseUserPrincipal.java`: principal chứa `uid`, `email`, `name`, `role`.
+- `service/AuthenticatedUserService.java`: lấy user hiện tại, kiểm tra chính chủ hoặc admin.
+- `service/UserService.java`: sync user và gán role theo email admin.
+
+### Rule Hiện Tại
+
+| API | Quyền |
+| --- | --- |
+| `GET /api/destinations/**` | Public |
+| `GET /api/categories/**` | Public |
+| `GET /api/images/**` | Public |
+| `POST /api/users/sync` | Đã đăng nhập Firebase |
+| `/api/users/**` | Đã đăng nhập, chính chủ hoặc ADMIN tùy endpoint |
+| `POST/PUT/DELETE /api/destinations/**` | Đã đăng nhập |
+| `/api/admin/**` | Role `ADMIN` |
+
+### Cách Tạo Admin
+
+1. Tạo tài khoản trong Firebase Authentication.
+2. Thêm email vào cấu hình:
+
+```yaml
+app:
+  admin-emails: admin@example.com
+```
+
+hoặc:
+
+```powershell
+$env:ADMIN_EMAILS="admin@example.com"
+```
+
+3. Đăng nhập app bằng email đó.
+4. App gọi `POST /api/users/sync`.
+5. Backend lưu user với role `ADMIN`.
+
+Nếu user đã tồn tại là `USER`, khi email được thêm vào `admin-emails` và sync lại, backend sẽ nâng role thành `ADMIN`.
+
+## Admin API
+
+Các API dưới đây yêu cầu role `ADMIN`:
+
+```text
+POST   /api/admin/destinations
+PUT    /api/admin/destinations/{id}
+DELETE /api/admin/destinations/{id}
+
+POST   /api/admin/categories
+PUT    /api/admin/categories/{id}
+DELETE /api/admin/categories/{id}
+
+GET    /api/admin/statistics/overview
+GET    /api/admin/statistics/top-rated
+GET    /api/admin/statistics/top-favorited
+GET    /api/admin/statistics/by-category
+```
+
+Ràng buộc chính:
+
+- Destination bắt buộc có `title`, `description`, `city`, `placeType`, `priceLevel`, `categoryId`.
+- `placeType`: `FOOD`, `ENTERTAINMENT`, `HOTEL`, `CAFE`, `CULTURE_HISTORY`, `SHOPPING`.
+- `priceLevel`: `FREE`, `BUDGET`, `MODERATE`, `PREMIUM`, `LUXURY`.
+- `minPrice <= maxPrice`.
+- Rating nếu nhập phải trong khoảng `0..5`.
+- Không xóa destination đã có review/favorite.
+- Không xóa category đang được destination sử dụng.
+
+## Public API Chính
+
+```text
+GET /api/destinations
+GET /api/destinations/{id}
+GET /api/destinations/latest?limit=10
+GET /api/destinations/by-category/{name}
+GET /api/destinations/search?q=&city=&district=&placeType=&priceLevel=&minRating=&nearId=&radiusKm=&sortBy=
+GET /api/categories
+GET /api/images/proxy?url=<encoded-url>
+```
+
+Search nearby dùng `nearId` và tọa độ `latitude/longitude` trong database, tính khoảng cách bằng công thức Haversine. Kết quả có `distanceKm` khi dùng nearby.
+
+## User/Review/Favorite API
+
+Các API ghi dữ liệu cần đăng nhập:
+
+```text
+POST /api/users/sync
+GET  /api/users/{username}
+PUT  /api/users/{username}
+GET  /api/users/{username}/reviews
+
+POST /api/destinations/{destinationId}/reviews
+PUT  /api/destinations/{destinationId}/reviews/{reviewId}
+DELETE /api/destinations/{destinationId}/reviews/{reviewId}
+
+POST /api/destinations/reviews/{reviewId}/replies
+PUT  /api/destinations/reviews/{reviewId}/replies/{replyId}
+DELETE /api/destinations/reviews/{reviewId}/replies/{replyId}
+
+POST /api/destinations/reviews/{reviewId}/like
+GET/POST/DELETE /api/users/{userId}/favorites
+```
+
+Backend kiểm tra chính chủ bằng Firebase UID, không nên tin `userId` client gửi lên cho các thao tác nhạy cảm.
+
 ## Database Và Seed
 
 - Database mặc định: `travel_db`.
-- Backend dùng `spring.jpa.hibernate.ddl-auto=update`.
-- `DataSeeder` tự thêm danh mục và địa điểm TP.HCM/Vũng Tàu.
-- Seed dùng upsert, không xóa destination/review/favorite cũ để tránh đứt liên kết dữ liệu người dùng.
+- `spring.jpa.hibernate.ddl-auto=update`.
+- `DataSeeder` thêm/cập nhật danh mục và địa điểm TP.HCM/Vũng Tàu.
+- Seeder không xóa destination/review/favorite cũ để tránh đứt khóa ngoại.
 
-## Kiểm Tra
+## Test
 
 ```powershell
 .\mvnw.cmd test
 ```
 
-Một số API nên test thủ công:
+Smoke test nhanh:
 
 ```text
 GET http://localhost:8080/api/destinations
@@ -118,11 +249,18 @@ GET http://localhost:8080/api/destinations/search?nearId=1&radiusKm=2&sortBy=dis
 GET http://localhost:8080/api/categories
 ```
 
-## Lưu Ý Bảo Mật
+## File Không Được Commit Public
 
-Không public các file thật sau:
+```text
+src/main/resources/application-local.yaml
+src/main/resources/serviceAccountKey.json
+uploads/
+target/
+```
 
-- `src/main/resources/serviceAccountKey.json`
-- `src/main/resources/application-local.yaml`
-- `.env`
-- thư mục `uploads/`
+Chỉ commit:
+
+```text
+src/main/resources/application.example.yaml
+src/main/resources/serviceAccountKey.example.json
+```

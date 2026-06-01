@@ -8,6 +8,7 @@ import '../../../core/data/destination_model.dart';
 import '../../../core/data/favorite_local_service.dart';
 import '../../../core/data/review_model.dart';
 import '../../../core/data/travel_repository.dart';
+import '../../admin/admin_dashboard_screen.dart';
 import '../../auth/login_screen.dart';
 import '../../place_detail/place_detail_screen.dart';
 import '../../place_detail/presentation/reviews_screen.dart';
@@ -28,6 +29,7 @@ class ProfileScreenState extends State<ProfileScreen>
   String _email = '';
   String? _photoUrl;
   String? _currentUid;
+  String _role = 'USER';
 
   final ApiService _api = ApiService();
   final TravelRepository _repository = TravelRepository();
@@ -64,6 +66,7 @@ class ProfileScreenState extends State<ProfileScreen>
         _displayName = firebaseUser.displayName ?? '';
         _email = firebaseUser.email ?? '';
         _photoUrl = firebaseUser.photoURL;
+        _role = 'USER';
       });
     } else {
       // Fallback: lấy từ local session
@@ -74,6 +77,7 @@ class ProfileScreenState extends State<ProfileScreen>
           _displayName = (session['displayName'] as String?) ?? '';
           _email = (session['email'] as String?) ?? '';
           _photoUrl = (session['photoUrl'] as String?);
+          _role = (session['role'] as String?) ?? 'USER';
         });
       }
     }
@@ -96,6 +100,7 @@ class ProfileScreenState extends State<ProfileScreen>
           _displayName = '';
           _email = '';
           _photoUrl = null;
+          _role = 'USER';
           _savedPlaces = [];
           _userReviews = [];
           _isCheckingAuth = false;
@@ -126,6 +131,7 @@ class ProfileScreenState extends State<ProfileScreen>
           if (avatarUrl != null && avatarUrl.isNotEmpty) {
             _photoUrl = avatarUrl;
           }
+          _role = (profile['role'] as String?) ?? _role;
         });
       }
     } catch (_) {}
@@ -373,6 +379,8 @@ class ProfileScreenState extends State<ProfileScreen>
             ),
           ),
         ],
+        const SizedBox(height: 8),
+        buildRoleChip(),
         const SizedBox(height: 6),
         TextButton.icon(
           onPressed: () async {
@@ -392,7 +400,40 @@ class ProfileScreenState extends State<ProfileScreen>
             ),
           ),
         ),
+        if (_role.toUpperCase() == 'ADMIN') ...[
+          const SizedBox(height: 2),
+          OutlinedButton.icon(
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const AdminDashboardScreen()),
+              );
+            },
+            icon: const Icon(Icons.admin_panel_settings_outlined, size: 18),
+            label: const Text('Mở trang quản trị'),
+          ),
+        ],
       ],
+    );
+  }
+
+  Widget buildRoleChip() {
+    final isAdmin = _role.toUpperCase() == 'ADMIN';
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: (isAdmin ? AppColors.secondary : AppColors.primaryLight)
+            .withValues(alpha: 0.18),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        isAdmin ? 'Quản trị viên' : 'Người dùng',
+        style: TextStyle(
+          color: isAdmin ? AppColors.secondaryDark : AppColors.primaryDark,
+          fontWeight: FontWeight.w700,
+          fontSize: 12,
+        ),
+      ),
     );
   }
 

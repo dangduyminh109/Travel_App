@@ -14,6 +14,8 @@ public interface DestinationRepository extends JpaRepository<Destination, Long>,
 
     List<Destination> findByCategory_NameIgnoreCase(String name);
 
+    long countByCategory_Id(Long categoryId);
+
     List<Destination> findByTitleIgnoreCase(String title);
 
     Optional<Destination> findFirstByTitleIgnoreCaseAndCityIgnoreCase(String title, String city);

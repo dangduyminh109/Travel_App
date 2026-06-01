@@ -1,6 +1,9 @@
+import 'dart:async';
 import 'dart:io';
-import 'package:flutter/material.dart';
+
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/material.dart';
+
 import '../../core/constants/app_colors.dart';
 import '../../core/data/auth_service.dart';
 import '../main_screen.dart';
@@ -56,7 +59,7 @@ class LoginScreenState extends State<LoginScreen> {
           showError('Sai email hoặc mật khẩu');
           break;
         case 'user-disabled':
-          showError('Tài khoản đã bị vô hiệu hoá');
+          showError('Tài khoản đã bị vô hiệu hóa');
           break;
         case 'too-many-requests':
           showError('Quá nhiều lần thử. Vui lòng thử lại sau');
@@ -73,6 +76,11 @@ class LoginScreenState extends State<LoginScreen> {
     } on SocketException {
       if (!mounted) return;
       showError('Không có kết nối mạng. Vui lòng kiểm tra Internet');
+    } on TimeoutException {
+      if (!mounted) return;
+      showError(
+        'Firebase phản hồi quá lâu. Hãy kiểm tra Internet trên emulator.',
+      );
     } catch (e) {
       if (!mounted) return;
       if (e.toString().contains('SocketException') ||
@@ -113,6 +121,11 @@ class LoginScreenState extends State<LoginScreen> {
     } on SocketException {
       if (!mounted) return;
       showError('Không có kết nối mạng. Vui lòng kiểm tra Internet');
+    } on TimeoutException {
+      if (!mounted) return;
+      showError(
+        'Firebase phản hồi quá lâu. Hãy kiểm tra Internet trên emulator.',
+      );
     } catch (e) {
       if (!mounted) return;
       if (e.toString().contains('SocketException') ||
@@ -136,6 +149,19 @@ class LoginScreenState extends State<LoginScreen> {
     );
   }
 
+  void goBack() {
+    if (Navigator.canPop(context)) {
+      Navigator.pop(context);
+      return;
+    }
+
+    Navigator.pushAndRemoveUntil(
+      context,
+      MaterialPageRoute(builder: (_) => const MainScreen()),
+      (route) => false,
+    );
+  }
+
   void showError(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(message), behavior: SnackBarBehavior.floating),
@@ -148,16 +174,36 @@ class LoginScreenState extends State<LoginScreen> {
     final isBusy = isLoading || isGoogleLoading;
 
     return Scaffold(
-      body: SingleChildScrollView(
-        child: Column(
-          children: [
-            buildHeroImage(size),
-            Transform.translate(
-              offset: const Offset(0, -30),
-              child: buildBodyContainer(context, isBusy),
+      body: Stack(
+        children: [
+          SingleChildScrollView(
+            child: Column(
+              children: [
+                buildHeroImage(size),
+                Transform.translate(
+                  offset: const Offset(0, -30),
+                  child: buildBodyContainer(context, isBusy),
+                ),
+              ],
             ),
-          ],
-        ),
+          ),
+          SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Material(
+                color: Colors.white.withValues(alpha: 0.92),
+                shape: const CircleBorder(),
+                elevation: 2,
+                child: IconButton(
+                  tooltip: 'Quay lại',
+                  onPressed: isBusy ? null : goBack,
+                  icon: const Icon(Icons.arrow_back),
+                  color: AppColors.textPrimary,
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -289,29 +335,6 @@ class LoginScreenState extends State<LoginScreen> {
               },
             ),
             const SizedBox(height: 8),
-            // Align(
-            //   alignment: Alignment.centerRight,
-            //   child: TextButton(
-            //     onPressed: isBusy
-            //         ? null
-            //         : () {
-            //             Navigator.push(
-            //               context,
-            //               MaterialPageRoute(
-            //                 builder: (_) => const ForgotPasswordScreen(),
-            //               ),
-            //             );
-            //           },
-            //     // child: const Text(
-            //     //   'Quên mật khẩu?',
-            //     //   style: TextStyle(
-            //     //     color: AppColors.primary,
-            //     //     fontWeight: FontWeight.w500,
-            //     //   ),
-            //     // ),
-            //   ),
-            // ),
-            // const SizedBox(height: 8),
             SizedBox(
               height: 50,
               child: ElevatedButton(
@@ -341,15 +364,6 @@ class LoginScreenState extends State<LoginScreen> {
                     isLoading: isGoogleLoading,
                   ),
                 ),
-                // const SizedBox(width: 16),
-                // Expanded(
-                //   child: buildSocialButton(
-                //     label: 'Facebook',
-                //     iconPath: 'f',
-                //     onTap: null,
-                //     isLoading: false,
-                //   ),
-                // ),
               ],
             ),
             const SizedBox(height: 24),

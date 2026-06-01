@@ -10,6 +10,8 @@ import org.springframework.transaction.annotation.Transactional;
 public interface FavoriteRepository extends JpaRepository<Favorite, Long> {
     List<Favorite> findByUser_Username(String username);
 
+    long countByDestination_Id(Long destinationId);
+
     boolean existsByUser_UsernameAndDestination_Id(String username, Long destinationId);
 
     @Transactional

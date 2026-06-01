@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:http/http.dart' as http;
 
 import 'category_model.dart';
@@ -14,14 +15,36 @@ class ApiService {
   static const String _baseUrl = 'http://10.0.2.2:8080/api';
   static const Duration _requestTimeout = Duration(seconds: 5);
 
-  Map<String, String> get _headers => {
-    'Content-Type': 'application/json',
-    'Accept': 'application/json',
-  };
+  Future<Map<String, String>> _headers({
+    bool jsonContent = true,
+    bool includeAuth = true,
+  }) async {
+    final headers = <String, String>{'Accept': 'application/json'};
+    if (jsonContent) {
+      headers['Content-Type'] = 'application/json';
+    }
+    if (includeAuth) {
+      final token = await _firebaseToken();
+      if (token != null && token.isNotEmpty) {
+        headers['Authorization'] = 'Bearer $token';
+      }
+    }
+    return headers;
+  }
+
+  Future<String?> _firebaseToken() async {
+    try {
+      return await FirebaseAuth.instance.currentUser?.getIdToken().timeout(
+        const Duration(seconds: 3),
+      );
+    } catch (_) {
+      return null;
+    }
+  }
 
   Future<List<DestinationModel>> getTrending({int limit = 6}) async {
     final uri = Uri.parse('$_baseUrl/destinations/latest?limit=$limit');
-    final response = await _get(uri);
+    final response = await _get(uri, auth: false);
     _assertOk(response);
     return _decodeList(
       response.body,
@@ -31,7 +54,7 @@ class ApiService {
 
   Future<DestinationModel> getFeatured() async {
     final uri = Uri.parse('$_baseUrl/destinations/latest?limit=1');
-    final response = await _get(uri);
+    final response = await _get(uri, auth: false);
     _assertOk(response);
     final data = _decodeList(
       response.body,
@@ -43,7 +66,7 @@ class ApiService {
 
   Future<List<DestinationModel>> getAll() async {
     final uri = Uri.parse('$_baseUrl/destinations');
-    final response = await _get(uri);
+    final response = await _get(uri, auth: false);
     _assertOk(response);
     return _decodeList(
       response.body,
@@ -89,7 +112,7 @@ class ApiService {
     final uri = Uri.parse('$_baseUrl/destinations/search').replace(
       queryParameters: queryParameters.isEmpty ? null : queryParameters,
     );
-    final response = await _get(uri);
+    final response = await _get(uri, auth: false);
     _assertOk(response);
     return _decodeList(
       response.body,
@@ -106,7 +129,7 @@ class ApiService {
         '$_baseUrl/destinations/by-category/${Uri.encodeQueryComponent(category)}',
       );
     }
-    final response = await _get(uri);
+    final response = await _get(uri, auth: false);
     _assertOk(response);
     return _decodeList(
       response.body,
@@ -116,7 +139,7 @@ class ApiService {
 
   Future<DestinationModel> getById(int id) async {
     final uri = Uri.parse('$_baseUrl/destinations/$id');
-    final response = await _get(uri);
+    final response = await _get(uri, auth: false);
     _assertOk(response);
     final body = jsonDecode(response.body) as Map<String, dynamic>;
     return DestinationModel.fromJson(body['data'] as Map<String, dynamic>);
@@ -124,14 +147,14 @@ class ApiService {
 
   Future<List<CategoryModel>> getCategories() async {
     final uri = Uri.parse('$_baseUrl/categories');
-    final response = await _get(uri);
+    final response = await _get(uri, auth: false);
     _assertOk(response);
     return _decodeList(response.body, (item) => CategoryModel.fromJson(item));
   }
 
   Future<List<ReviewModel>> getReviews(int destinationId) async {
     final uri = Uri.parse('$_baseUrl/destinations/$destinationId/reviews');
-    final response = await _get(uri);
+    final response = await _get(uri, auth: false);
     _assertOk(response);
     return _decodeList(response.body, (item) => ReviewModel.fromJson(item));
   }
@@ -263,7 +286,7 @@ class ApiService {
     return body['data'] as Map<String, dynamic>;
   }
 
-  Future<void> syncUser({
+  Future<Map<String, dynamic>> syncUser({
     required String uid,
     required String email,
     required String displayName,
@@ -277,6 +300,8 @@ class ApiService {
 
     final response = await _post(uri, body: jsonEncode(payload));
     _assertOk(response);
+    final body = jsonDecode(response.body) as Map<String, dynamic>;
+    return body['data'] as Map<String, dynamic>;
   }
 
   Future<Map<String, dynamic>> updateUserProfile({
@@ -286,6 +311,7 @@ class ApiService {
   }) async {
     final uri = Uri.parse('$_baseUrl/users/$username');
     final request = http.MultipartRequest('PUT', uri);
+    request.headers.addAll(await _headers(jsonContent: false));
 
     if (fullName != null && fullName.isNotEmpty) {
       request.fields['fullName'] = fullName;
@@ -305,6 +331,91 @@ class ApiService {
     return body['data'] as Map<String, dynamic>;
   }
 
+  Future<DestinationModel> createAdminDestination(
+    Map<String, dynamic> payload,
+  ) async {
+    final uri = Uri.parse('$_baseUrl/admin/destinations');
+    final response = await _post(uri, body: jsonEncode(payload));
+    _assertOk(response);
+    final body = jsonDecode(response.body) as Map<String, dynamic>;
+    return DestinationModel.fromJson(body['data'] as Map<String, dynamic>);
+  }
+
+  Future<DestinationModel> updateAdminDestination(
+    int id,
+    Map<String, dynamic> payload,
+  ) async {
+    final uri = Uri.parse('$_baseUrl/admin/destinations/$id');
+    final response = await _put(uri, body: jsonEncode(payload));
+    _assertOk(response);
+    final body = jsonDecode(response.body) as Map<String, dynamic>;
+    return DestinationModel.fromJson(body['data'] as Map<String, dynamic>);
+  }
+
+  Future<void> deleteAdminDestination(int id) async {
+    final uri = Uri.parse('$_baseUrl/admin/destinations/$id');
+    final response = await _delete(uri);
+    _assertOk(response);
+  }
+
+  Future<CategoryModel> createAdminCategory(
+    Map<String, dynamic> payload,
+  ) async {
+    final uri = Uri.parse('$_baseUrl/admin/categories');
+    final response = await _post(uri, body: jsonEncode(payload));
+    _assertOk(response);
+    final body = jsonDecode(response.body) as Map<String, dynamic>;
+    return CategoryModel.fromJson(body['data'] as Map<String, dynamic>);
+  }
+
+  Future<CategoryModel> updateAdminCategory(
+    int id,
+    Map<String, dynamic> payload,
+  ) async {
+    final uri = Uri.parse('$_baseUrl/admin/categories/$id');
+    final response = await _put(uri, body: jsonEncode(payload));
+    _assertOk(response);
+    final body = jsonDecode(response.body) as Map<String, dynamic>;
+    return CategoryModel.fromJson(body['data'] as Map<String, dynamic>);
+  }
+
+  Future<void> deleteAdminCategory(int id) async {
+    final uri = Uri.parse('$_baseUrl/admin/categories/$id');
+    final response = await _delete(uri);
+    _assertOk(response);
+  }
+
+  Future<Map<String, dynamic>> getAdminOverview() async {
+    final uri = Uri.parse('$_baseUrl/admin/statistics/overview');
+    final response = await _get(uri);
+    _assertOk(response);
+    final body = jsonDecode(response.body) as Map<String, dynamic>;
+    return body['data'] as Map<String, dynamic>;
+  }
+
+  Future<List<Map<String, dynamic>>> getAdminTopRated() async {
+    final uri = Uri.parse('$_baseUrl/admin/statistics/top-rated');
+    return _getAdminMapList(uri);
+  }
+
+  Future<List<Map<String, dynamic>>> getAdminTopFavorited() async {
+    final uri = Uri.parse('$_baseUrl/admin/statistics/top-favorited');
+    return _getAdminMapList(uri);
+  }
+
+  Future<List<Map<String, dynamic>>> getAdminByCategory() async {
+    final uri = Uri.parse('$_baseUrl/admin/statistics/by-category');
+    return _getAdminMapList(uri);
+  }
+
+  Future<List<Map<String, dynamic>>> _getAdminMapList(Uri uri) async {
+    final response = await _get(uri);
+    _assertOk(response);
+    final body = jsonDecode(response.body) as Map<String, dynamic>;
+    final data = body['data'] as List<dynamic>? ?? [];
+    return data.map((item) => item as Map<String, dynamic>).toList();
+  }
+
   List<T> _decodeList<T>(String body, T Function(Map<String, dynamic>) mapper) {
     final payload = jsonDecode(body) as Map<String, dynamic>;
     final data = payload['data'] as List<dynamic>? ?? [];
@@ -320,24 +431,30 @@ class ApiService {
     return data.map(mapper).toList();
   }
 
-  Future<http.Response> _get(Uri uri) {
-    return http.get(uri, headers: _headers).timeout(_requestTimeout);
+  Future<http.Response> _get(Uri uri, {bool auth = true}) {
+    return _headers(includeAuth: auth).then(
+      (headers) => http.get(uri, headers: headers).timeout(_requestTimeout),
+    );
   }
 
   Future<http.Response> _post(Uri uri, {Object? body}) {
-    return http
-        .post(uri, headers: _headers, body: body)
-        .timeout(_requestTimeout);
+    return _headers().then(
+      (headers) =>
+          http.post(uri, headers: headers, body: body).timeout(_requestTimeout),
+    );
   }
 
   Future<http.Response> _put(Uri uri, {Object? body}) {
-    return http
-        .put(uri, headers: _headers, body: body)
-        .timeout(_requestTimeout);
+    return _headers().then(
+      (headers) =>
+          http.put(uri, headers: headers, body: body).timeout(_requestTimeout),
+    );
   }
 
   Future<http.Response> _delete(Uri uri) {
-    return http.delete(uri, headers: _headers).timeout(_requestTimeout);
+    return _headers().then(
+      (headers) => http.delete(uri, headers: headers).timeout(_requestTimeout),
+    );
   }
 
   void _assertOk(http.Response response) {

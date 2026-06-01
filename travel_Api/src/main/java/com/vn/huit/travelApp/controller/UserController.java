@@ -5,6 +5,8 @@ import com.vn.huit.travelApp.entity.User;
 import com.vn.huit.travelApp.entity.Review;
 import com.vn.huit.travelApp.dto.ReviewDto;
 import com.vn.huit.travelApp.repository.ReviewRepository;
+import com.vn.huit.travelApp.security.FirebaseUserPrincipal;
+import com.vn.huit.travelApp.service.AuthenticatedUserService;
 import com.vn.huit.travelApp.service.UserService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -19,9 +21,11 @@ import java.util.Map;
 public class UserController {
     private final UserService userService;
     private final ReviewRepository reviewRepository;
+    private final AuthenticatedUserService authenticatedUserService;
 
     @GetMapping("/{username}")
     public ResponseEntity<ApiResponse<User>> getUserProfile(@PathVariable String username) {
+        authenticatedUserService.requireSelfOrAdmin(username);
         User user = userService.getUserInfo(username);
         if (user == null) {
             return ResponseEntity.status(404).body(ApiResponse.error("User not found"));
@@ -31,9 +35,15 @@ public class UserController {
 
     @PostMapping("/sync")
     public ResponseEntity<ApiResponse<User>> syncUser(@RequestBody Map<String, String> payload) {
-        String uid = payload.get("uid");
-        String email = payload.get("email");
+        FirebaseUserPrincipal principal = authenticatedUserService.currentPrincipal();
+        String uid = principal.uid();
+        String email = principal.email() != null && !principal.email().isBlank()
+                ? principal.email()
+                : payload.get("email");
         String displayName = payload.get("displayName");
+        if ((displayName == null || displayName.isBlank()) && principal.name() != null) {
+            displayName = principal.name();
+        }
         String photoUrl = payload.get("photoUrl");
         if (uid == null || uid.trim().isEmpty()) {
             return ResponseEntity.badRequest().body(ApiResponse.error("UID is required"));
@@ -48,6 +58,7 @@ public class UserController {
             @RequestParam(value = "fullName", required = false) String fullName,
             @RequestParam(value = "avatar", required = false) MultipartFile avatar) {
         try {
+            authenticatedUserService.requireSelfOrAdmin(username);
             User updatedUser = userService.updateUserProfile(username, fullName, avatar);
             if (updatedUser == null) {
                 return ResponseEntity.status(404).body(ApiResponse.error("User not found"));
@@ -60,6 +71,7 @@ public class UserController {
 
     @GetMapping("/{username}/reviews")
     public ResponseEntity<ApiResponse<List<ReviewDto>>> getUserReviews(@PathVariable String username) {
+        authenticatedUserService.requireSelfOrAdmin(username);
         User user = userService.getUserInfo(username);
         if (user == null) {
             return ResponseEntity.status(404).body(ApiResponse.error("User not found"));

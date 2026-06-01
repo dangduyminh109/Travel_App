@@ -7,6 +7,7 @@ import com.vn.huit.travelApp.repository.DestinationRepository;
 import com.vn.huit.travelApp.repository.FavoriteRepository;
 import com.vn.huit.travelApp.repository.UserRepository;
 import com.vn.huit.travelApp.entity.User;
+import com.vn.huit.travelApp.service.AuthenticatedUserService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -21,9 +22,11 @@ public class FavoriteController {
     private final FavoriteRepository favoriteRepository;
     private final DestinationRepository destinationRepository;
     private final UserRepository userRepository;
+    private final AuthenticatedUserService authenticatedUserService;
 
     @GetMapping("/{userId}/favorites")
     public ResponseEntity<ApiResponse<List<Long>>> getFavorites(@PathVariable String userId) {
+        authenticatedUserService.requireSelfOrAdmin(userId);
         List<Long> ids = favoriteRepository.findByUser_Username(userId).stream()
                 .map(fav -> fav.getDestination().getId())
                 .toList();
@@ -34,6 +37,7 @@ public class FavoriteController {
     public ResponseEntity<ApiResponse<List<Long>>> addFavorite(
             @PathVariable String userId,
             @PathVariable Long destinationId) {
+        authenticatedUserService.requireSelfOrAdmin(userId);
         Destination destination = destinationRepository.findById(destinationId).orElse(null);
         if (destination == null) {
             return ResponseEntity.status(404).body(ApiResponse.error("Destination not found"));
@@ -52,6 +56,7 @@ public class FavoriteController {
     public ResponseEntity<ApiResponse<List<Long>>> removeFavorite(
             @PathVariable String userId,
             @PathVariable Long destinationId) {
+        authenticatedUserService.requireSelfOrAdmin(userId);
         favoriteRepository.deleteByUser_UsernameAndDestination_Id(userId, destinationId);
         return getFavorites(userId);
     }

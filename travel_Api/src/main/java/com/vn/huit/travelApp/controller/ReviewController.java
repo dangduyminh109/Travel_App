@@ -8,6 +8,7 @@ import com.vn.huit.travelApp.entity.Destination;
 import com.vn.huit.travelApp.entity.Review;
 import com.vn.huit.travelApp.repository.*;
 import com.vn.huit.travelApp.entity.User;
+import com.vn.huit.travelApp.service.AuthenticatedUserService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -22,10 +23,10 @@ public class ReviewController {
 
     private final DestinationRepository destinationRepository;
     private final ReviewRepository reviewRepository;
-    private final UserRepository userRepository;
     private final ReplyRepository replyRepository;
     private final ReviewLikeRepository reviewLikeRepository;
     private final com.vn.huit.travelApp.service.FirebaseRealtimeService firebaseRealtimeService;
+    private final AuthenticatedUserService authenticatedUserService;
 
     @GetMapping("/{destinationId}/reviews")
     public ResponseEntity<ApiResponse<List<ReviewDto>>> getReviews(@PathVariable Long destinationId) {
@@ -54,13 +55,7 @@ public class ReviewController {
             return ResponseEntity.badRequest().body(ApiResponse.error("Comment is required"));
         }
 
-        if (request.getUserId() == null || request.getUserId().trim().isEmpty()) {
-            return ResponseEntity.badRequest().body(ApiResponse.error("User ID (uid) is required"));
-        }
-        User user = userRepository.findByUsername(request.getUserId()).orElse(null);
-        if (user == null) {
-            return ResponseEntity.status(404).body(ApiResponse.error("User not found in system. Please sync user first."));
-        }
+        User user = authenticatedUserService.currentUser();
 
         Review review = Review.builder()
                 .user(user)
@@ -111,6 +106,9 @@ public class ReviewController {
         if (review == null || !review.getDestination().getId().equals(destinationId)) {
             return ResponseEntity.status(404).body(ApiResponse.error("Review not found"));
         }
+        if (!authenticatedUserService.canManage(review.getUser())) {
+            return ResponseEntity.status(403).body(ApiResponse.error("Not authorized to update this review"));
+        }
         if (request.getRating() == null || request.getRating() < 1 || request.getRating() > 5) {
             return ResponseEntity.badRequest().body(ApiResponse.error("Rating must be between 1 and 5"));
         }
@@ -147,6 +145,9 @@ public class ReviewController {
         if (review == null || !review.getDestination().getId().equals(destinationId)) {
             return ResponseEntity.status(404).body(ApiResponse.error("Review not found"));
         }
+        if (!authenticatedUserService.canManage(review.getUser())) {
+            return ResponseEntity.status(403).body(ApiResponse.error("Not authorized to delete this review"));
+        }
         
         reviewRepository.delete(review);
         
@@ -166,10 +167,7 @@ public class ReviewController {
         if (review == null) {
             return ResponseEntity.status(404).body(ApiResponse.error("Review not found"));
         }
-        User user = userRepository.findByUsername(request.getUserId()).orElse(null);
-        if (user == null) {
-            return ResponseEntity.status(404).body(ApiResponse.error("User not found"));
-        }
+        User user = authenticatedUserService.currentUser();
         if (request.getComment() == null || request.getComment().trim().isEmpty()) {
             return ResponseEntity.badRequest().body(ApiResponse.error("Reply content is required"));
         }
@@ -215,7 +213,7 @@ public class ReviewController {
         if (reply == null || !reply.getReview().getId().equals(reviewId)) {
             return ResponseEntity.status(404).body(ApiResponse.error("Reply not found"));
         }
-        if (!reply.getUser().getUsername().equals(userId)) {
+        if (!authenticatedUserService.canManage(reply.getUser())) {
             return ResponseEntity.status(403).body(ApiResponse.error("Not authorized to update this reply"));
         }
         if (request.getComment() == null || request.getComment().trim().isEmpty()) {
@@ -244,8 +242,8 @@ public class ReviewController {
         Review review = reviewRepository.findById(reviewId).orElse(null);
         if (review == null) return ResponseEntity.status(404).body(ApiResponse.error("Review not found"));
         
-        User user = userRepository.findByUsername(userId).orElse(null);
-        if (user == null) return ResponseEntity.status(404).body(ApiResponse.error("User not found"));
+        User user = authenticatedUserService.currentUser();
+        userId = user.getUsername();
 
         java.util.Optional<com.vn.huit.travelApp.entity.ReviewLike> existing = reviewLikeRepository.findByReviewAndUser(review, user);
         String resultType;
@@ -304,7 +302,7 @@ public class ReviewController {
             return ResponseEntity.status(404).body(ApiResponse.error("Reply not found"));
         }
         // Only the author can delete
-        if (!reply.getUser().getUsername().equals(userId)) {
+        if (!authenticatedUserService.canManage(reply.getUser())) {
             return ResponseEntity.status(403).body(ApiResponse.error("Not authorized to delete this reply"));
         }
         replyRepository.delete(reply);
